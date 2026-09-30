@@ -22,8 +22,7 @@ final class WallpaperWindowManager {
     )
 
     // MARK: - Show Wallpaper
-
-    func showWallpaper(player: AVPlayer) {
+    func showWallpaper(player: AVPlayer,scalingMode: VideoScalingMode){
 
         // Remove any wallpaper windows that already exist.
         hideWallpaper()
@@ -38,10 +37,10 @@ final class WallpaperWindowManager {
         logger.info("Creating wallpaper windows for \(screens.count) screen(s).")
 
         for screen in screens {
-
             let window = createWallpaperWindow(
                 for: screen,
-                player: player
+                player: player,
+                scalingMode: scalingMode
             )
 
             wallpaperWindows.append(window)
@@ -76,11 +75,11 @@ final class WallpaperWindowManager {
     }
 
     // MARK: - Create Wallpaper Window
-
     private func createWallpaperWindow(
         for screen: NSScreen,
-        player: AVPlayer
-    ) -> NSWindow {
+        player: AVPlayer,
+        scalingMode: VideoScalingMode
+    ) -> NSWindow{
 
         let window = NSWindow(
             contentRect: screen.frame,
@@ -143,11 +142,10 @@ final class WallpaperWindowManager {
         // ---------------------------------------------------------
         // Put our SwiftUI video view inside the AppKit window.
         // ---------------------------------------------------------
-
         let videoView = VideoPlayerView(
-            player: player
+            player: player,
+            scalingMode: scalingMode
         )
-
         let hostingView = NSHostingView(
             rootView: videoView
         )

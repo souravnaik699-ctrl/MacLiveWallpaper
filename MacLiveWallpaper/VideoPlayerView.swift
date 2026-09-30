@@ -9,25 +9,36 @@ import SwiftUI
 import AppKit
 import AVFoundation
 
+// MARK: - SwiftUI Video Player View
+
 struct VideoPlayerView: NSViewRepresentable {
 
     let player: AVPlayer?
+    var scalingMode: VideoScalingMode = .fill
+
+    // MARK: Create NSView
 
     func makeNSView(context: Context) -> PlayerContainerView {
+
         let view = PlayerContainerView()
+
+        view.scalingMode = scalingMode
         view.playerLayer.player = player
+
         return view
     }
 
-    func updateNSView(_ nsView: PlayerContainerView, context: Context) {
-        nsView.playerLayer.player = player
-    }
+    // MARK: Update NSView
 
-    static func dismantleNSView(
+    func updateNSView(
         _ nsView: PlayerContainerView,
-        coordinator: ()
+        context: Context
     ) {
-        nsView.playerLayer.player = nil
+
+        nsView.scalingMode = scalingMode
+        nsView.playerLayer.player = player
+
+        nsView.updateVideoLayout()
     }
 }
 
@@ -36,35 +47,158 @@ struct VideoPlayerView: NSViewRepresentable {
 
 final class PlayerContainerView: NSView {
 
+    // AVPlayerLayer displays the video.
     let playerLayer = AVPlayerLayer()
 
+    // Current scaling mode.
+    var scalingMode: VideoScalingMode = .fill {
+        didSet {
+            updateVideoLayout()
+        }
+    }
+
+    // MARK: Initializer
+
     override init(frame frameRect: NSRect) {
+
         super.init(frame: frameRect)
 
-        wantsLayer = true
-
-        playerLayer.videoGravity = .resizeAspect
-        layer?.addSublayer(playerLayer)
+        setupView()
     }
+
+    // MARK: Storyboard / Nib Initializer
 
     required init?(coder: NSCoder) {
+
         super.init(coder: coder)
+
+        setupView()
+    }
+
+    // MARK: Setup
+
+    private func setupView() {
 
         wantsLayer = true
 
-        playerLayer.videoGravity = .resizeAspect
+        layer?.backgroundColor = NSColor.black.cgColor
+
+        playerLayer.videoGravity = .resizeAspectFill
+
         layer?.addSublayer(playerLayer)
     }
 
+    // MARK: Layout
+
     override func layout() {
+
         super.layout()
 
-        playerLayer.frame = bounds
+        updateVideoLayout()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
+    // MARK: Update Video Layout
 
-        playerLayer.frame = bounds
+    func updateVideoLayout() {
+
+        guard bounds.width > 0,
+              bounds.height > 0 else {
+            return
+        }
+
+        switch scalingMode {
+
+        // ---------------------------------------------------------
+        // FILL
+        // ---------------------------------------------------------
+
+        case .fill:
+
+            playerLayer.videoGravity = .resizeAspectFill
+
+            playerLayer.frame = bounds
+
+
+        // ---------------------------------------------------------
+        // FIT
+        // ---------------------------------------------------------
+
+        case .fit:
+
+            playerLayer.videoGravity = .resizeAspect
+
+            playerLayer.frame = bounds
+
+
+        // ---------------------------------------------------------
+        // CENTER
+        // ---------------------------------------------------------
+
+        case .center:
+
+            playerLayer.videoGravity = .resizeAspect
+
+            playerLayer.frame = centeredVideoFrame()
+        }
+    }
+
+    // MARK: Center Video
+
+    private func centeredVideoFrame() -> CGRect {
+
+        // IMPORTANT:
+        // The player belongs to AVPlayerLayer.
+        // Therefore we access it through:
+        //
+        // playerLayer.player
+        //
+        // This fixes:
+        // "Cannot find 'player' in scope"
+
+        guard let player = playerLayer.player,
+              let currentItem = player.currentItem else {
+
+            return bounds
+        }
+
+        // Get the video's presentation size.
+        let videoSize = currentItem.presentationSize
+
+        guard videoSize.width > 0,
+              videoSize.height > 0 else {
+
+            return bounds
+        }
+
+        // Calculate the scale required to keep
+        // the complete video inside the available area.
+        //
+        // min() ensures that the video fits both:
+        // - width
+        // - height
+
+        let scale = min(
+            1.0,
+            min(
+                bounds.width / videoSize.width,
+                bounds.height / videoSize.height
+            )
+        )
+
+        let width = videoSize.width * scale
+        let height = videoSize.height * scale
+
+        // Calculate the position required
+        // to place the video in the center.
+
+        let x = (bounds.width - width) / 2.0
+        let y = (bounds.height - height) / 2.0
+
+        return CGRect(
+            x: x,
+            y: y,
+            width: width,
+            height: height
+        )
     }
 }

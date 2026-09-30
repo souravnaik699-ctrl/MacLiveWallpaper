@@ -6,637 +6,688 @@
 //
 
 
+
 import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
 
-@StateObject private var playbackController =
-    VideoPlayerController()
-@State private var wallpaperManager = WallpaperWindowManager()
+    // MARK: - State
 
-@State private var statusMessage = "Ready"
+    @StateObject private var playbackController =
+        VideoPlayerController()
 
-@State private var hasWallpaper = false
+    @State private var wallpaperManager =
+        WallpaperWindowManager()
 
-@State private var showingSettings = false
+    @State private var scalingMode: VideoScalingMode = .fill
 
-@State private var isImporting = false
+    @State private var statusMessage = "Ready"
 
-@State private var metadata: VideoMetadata?
+    @State private var hasWallpaper = false
 
-@State private var bookmarkData: Data?
+    @State private var showingSettings = false
 
-var body: some View {
+    @State private var isImporting = false
 
-    VStack(spacing: 0) {
+    @State private var metadata: VideoMetadata?
 
-        // MARK: - Header
+    @State private var bookmarkData: Data?
 
-        HStack {
+    // MARK: - Body
+
+    var body: some View {
+
+        VStack(spacing: 0) {
+
+            // MARK: - Header
+
+            HStack {
+
+                VStack(
+                    alignment: .leading,
+                    spacing: 4
+                ) {
+
+                    Text("MAC LIVE WALLPAPER")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text(
+                        "Your animated desktop, made simple."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    showingSettings = true
+                } label: {
+
+                    Image(
+                        systemName: "gearshape"
+                    )
+                    .font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .help("Settings")
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+
+            Divider()
+
+            // MARK: - Video Preview
 
             VStack(
                 alignment: .leading,
-                spacing: 4
+                spacing: 12
             ) {
 
-                Text("MAC LIVE WALLPAPER")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                Text("Current Wallpaper")
+                    .font(.headline)
 
-                Text(
-                    "Your animated desktop, made simple."
+                ZStack {
+
+                    RoundedRectangle(
+                        cornerRadius: 14
+                    )
+                    .fill(.black)
+
+                    if playbackController.hasLoadedVideo {
+
+                        VideoPlayerView(
+                            player: playbackController.player,
+                            scalingMode: scalingMode
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 14
+                            )
+                        )
+
+                    } else {
+
+                        VStack(spacing: 12) {
+
+                            Image(
+                                systemName:
+                                    "rectangle.on.rectangle.slash"
+                            )
+                            .font(
+                                .system(size: 42)
+                            )
+                            .foregroundStyle(
+                                .secondary
+                            )
+
+                            Text(
+                                "No Video Selected"
+                            )
+                            .font(.headline)
+
+                            Text(
+                                "Add an MP4 or MOV video to preview it."
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(
+                                .secondary
+                            )
+                        }
+                        .multilineTextAlignment(
+                            .center
+                        )
+                        .padding()
+                    }
+                }
+                .frame(
+                    maxWidth: .infinity
                 )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .frame(height: 300)
+                .overlay {
+
+                    if let error =
+                        playbackController.playbackError {
+
+                        VStack(spacing: 8) {
+
+                            Image(
+                                systemName:
+                                    "exclamationmark.triangle.fill"
+                            )
+
+                            Text(error)
+                                .font(.caption)
+                                .multilineTextAlignment(
+                                    .center
+                                )
+                        }
+                        .foregroundStyle(
+                            .white
+                        )
+                        .padding()
+                        .background(
+                            .black.opacity(0.75),
+                            in:
+                                RoundedRectangle(
+                                    cornerRadius: 10
+                                )
+                        )
+                        .padding()
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+
+            // MARK: - Metadata
+
+            if let metadata {
+
+                HStack(spacing: 16) {
+
+                    metadataItem(
+                        title: "Resolution",
+                        value:
+                            "\(metadata.width) × \(metadata.height)"
+                    )
+
+                    metadataItem(
+                        title: "Codec",
+                        value: metadata.codec
+                    )
+
+                    metadataItem(
+                        title: "Duration",
+                        value:
+                            formattedDuration(
+                                metadata.duration
+                            )
+                    )
+
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
             }
 
-            Spacer()
+            // MARK: - Scaling Mode
+
+            if playbackController.hasLoadedVideo {
+
+                VStack(
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+
+                    Picker(
+                        "Scaling",
+                        selection: $scalingMode
+                    ) {
+
+                        ForEach(
+                            VideoScalingMode.allCases
+                        ) { mode in
+
+                            Text(
+                                mode.displayName
+                            )
+                            .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 14)
+            }
+
+            // MARK: - Add Button
 
             Button {
-                showingSettings = true
+
+                importWallpaper()
+
             } label: {
 
-                Image(
-                    systemName: "gearshape"
-                )
-                .font(.title3)
-            }
-            .buttonStyle(.borderless)
-            .help("Settings")
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, 20)
+                if isImporting {
 
-        Divider()
-
-        // MARK: - Video Preview
-
-        VStack(
-            alignment: .leading,
-            spacing: 12
-        ) {
-
-            Text("Current Wallpaper")
-                .font(.headline)
-
-            ZStack {
-
-                RoundedRectangle(
-                    cornerRadius: 14
-                )
-                .fill(.black)
-
-                if playbackController.hasLoadedVideo {
-
-                    VideoPlayerView(
-                        player:
-                            playbackController.player
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 14
+                    ProgressView()
+                        .controlSize(
+                            .small
                         )
-                    )
 
                 } else {
 
-                    VStack(spacing: 12) {
-
-                        Image(
-                            systemName:
-                                "rectangle.on.rectangle.slash"
-                        )
-                        .font(
-                            .system(size: 42)
-                        )
-                        .foregroundStyle(
-                            .secondary
-                        )
-
-                        Text(
-                            "No Video Selected"
-                        )
-                        .font(.headline)
-
-                        Text(
-                            "Add an MP4 or MOV video to preview it."
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(
-                            .secondary
-                        )
-                    }
-                    .multilineTextAlignment(
-                        .center
+                    Label(
+                        "Add Wallpaper",
+                        systemImage: "plus"
                     )
-                    .padding()
                 }
             }
-            .frame(
-                maxWidth: .infinity
+            .buttonStyle(
+                .borderedProminent
             )
-            .frame(height: 300)
-            .overlay {
+            .controlSize(.large)
+            .disabled(isImporting)
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
 
-                if let error =
-                    playbackController.playbackError {
+            // MARK: - Playback Controls
+        
+            HStack(spacing: 10) {
 
-                    VStack(spacing: 8) {
+                Button {
 
-                        Image(
-                            systemName:
-                                "exclamationmark.triangle.fill"
-                        )
+                    playbackController.restart()
 
-                        Text(error)
-                            .font(.caption)
-                            .multilineTextAlignment(
-                                .center
-                            )
-                    }
-                    .foregroundStyle(
-                        .white
+                    statusMessage =
+                        "Restarted."
+
+                } label: {
+
+                    Label(
+                        "Restart",
+                        systemImage:
+                            "backward.end.fill"
                     )
-                    .padding()
-                    .background(
-                        .black.opacity(0.75),
-                        in:
-                            RoundedRectangle(
-                                cornerRadius: 10
-                            )
-                    )
-                    .padding()
                 }
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+                .disabled(!hasWallpaper)
 
-        // MARK: - Metadata
+                Button {
 
-        if let metadata {
+                    playbackController.play()
 
-            HStack(spacing: 16) {
+                    statusMessage =
+                        "Playing."
 
-                metadataItem(
-                    title: "Resolution",
-                    value:
-                        "\(metadata.width) × \(metadata.height)"
-                )
+                } label: {
 
-                metadataItem(
-                    title: "Codec",
-                    value: metadata.codec
-                )
+                    Label(
+                        "Play",
+                        systemImage:
+                            "play.fill"
+                    )
+                }
+                .disabled(!hasWallpaper)
 
-                metadataItem(
-                    title: "Duration",
-                    value:
-                        formattedDuration(
-                            metadata.duration
-                        )
-                )
+                Button {
 
-                Spacer()
+                    playbackController.pause()
+
+                    statusMessage =
+                        "Paused."
+
+                } label: {
+
+                    Label(
+                        "Pause",
+                        systemImage:
+                            "pause.fill"
+                    )
+                }
+                .disabled(!hasWallpaper)
+
+                Button {
+
+                    playbackController.stop()
+
+                    statusMessage =
+                        "Stopped."
+
+                } label: {
+
+                    Label(
+                        "Stop",
+                        systemImage:
+                            "stop.fill"
+                    )
+                }
+                .disabled(!hasWallpaper)
+
+                Button {
+
+                    setWallpaper()
+
+                } label: {
+
+                    Label(
+                        "Set Wallpaper",
+                        systemImage:
+                            "desktopcomputer"
+                    )
+                }
+                .disabled(!hasWallpaper)
+
+                Button(
+                    role: .destructive
+                ) {
+
+                    removeWallpaper()
+
+                } label: {
+
+                    Label(
+                        "Remove",
+                        systemImage:
+                            "trash"
+                    )
+                }
+                .disabled(!hasWallpaper)
             }
             .padding(.horizontal, 24)
             .padding(.top, 12)
-        }
 
-        // MARK: - Add Button
+            // MARK: - Status
 
-        Button {
+            HStack(spacing: 8) {
 
-            importWallpaper()
-
-        } label: {
-
-            if isImporting {
-
-                ProgressView()
-                    .controlSize(
-                        .small
+                Circle()
+                    .fill(statusColor)
+                    .frame(
+                        width: 8,
+                        height: 8
                     )
 
-            } else {
+                Text("Status:")
+                    .fontWeight(.medium)
 
-                Label(
-                    "Add Wallpaper",
-                    systemImage: "plus"
-                )
+                Text(statusMessage)
+                    .foregroundStyle(
+                        .secondary
+                    )
+
+                Spacer()
             }
+            .font(.caption)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 20)
         }
-        .buttonStyle(
-            .borderedProminent
+        .frame(
+            minWidth: 760,
+            minHeight: 720
         )
-        .controlSize(.large)
-        .disabled(isImporting)
-        .padding(.horizontal, 24)
-        .padding(.top, 18)
-
-        // MARK: - Playback Controls
-
-        HStack(spacing: 10) {
-
-            Button {
-
-                playbackController.restart()
-
-                statusMessage =
-                    "Restarted."
-
-            } label: {
-
-                Label(
-                    "Restart",
-                    systemImage:
-                        "backward.end.fill"
-                )
-            }
-            .disabled(!hasWallpaper)
-
-            Button {
-
-                playbackController.play()
-
-                statusMessage =
-                    "Playing."
-
-            } label: {
-
-                Label(
-                    "Play",
-                    systemImage:
-                        "play.fill"
-                )
-            }
-            .disabled(!hasWallpaper)
-
-            Button {
-
-                playbackController.pause()
-
-                statusMessage =
-                    "Paused."
-
-            } label: {
-
-                Label(
-                    "Pause",
-                    systemImage:
-                        "pause.fill"
-                )
-            }
-            .disabled(!hasWallpaper)
-
-            Button {
-
-                playbackController.stop()
-
-                statusMessage =
-                    "Stopped."
-
-            } label: {
-
-                Label(
-                    "Stop",
-                    systemImage:
-                        "stop.fill"
-                )
-            }
-            .disabled(!hasWallpaper)
-
-            Button {
-
-                setWallpaper()
-
-            } label: {
-
-                Label(
-                    "Set Wallpaper",
-                    systemImage:
-                        "desktopcomputer"
-                )
-            }
-            .disabled(!hasWallpaper)
-
-            Button(
-                role: .destructive
-            ) {
-
-                removeWallpaper()
-
-            } label: {
-
-                Label(
-                    "Remove",
-                    systemImage:
-                        "trash"
-                )
-            }
-            .disabled(!hasWallpaper)
+        .sheet(
+            isPresented:
+                $showingSettings
+        ) {
+            SettingsView()
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-
-        // MARK: - Status
-
-        HStack(spacing: 8) {
-
-            Circle()
-                .fill(statusColor)
-                .frame(
-                    width: 8,
-                    height: 8
-                )
-
-            Text("Status:")
-                .fontWeight(.medium)
-
-            Text(statusMessage)
-                .foregroundStyle(
-                    .secondary
-                )
-
-            Spacer()
-        }
-        .font(.caption)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 20)
     }
-    .frame(
-        minWidth: 760,
-        minHeight: 680
-    )
-    .sheet(
-        isPresented:
-            $showingSettings
-    ) {
-        SettingsView()
-    }
-}
 
-// MARK: - Import
+    // MARK: - Import
 
-private func importWallpaper() {
+    private func importWallpaper() {
 
-    isImporting = true
+        isImporting = true
 
-    statusMessage =
-        "Choose an MP4 or MOV video..."
+        statusMessage =
+            "Choose an MP4 or MOV video..."
 
-    Task {
+        Task {
 
-        do {
+            do {
 
-            let result =
-                try await
-                VideoImportService
-                    .selectAndImportVideo()
+                let result =
+                    try await
+                    VideoImportService
+                        .selectAndImportVideo()
 
-            bookmarkData =
-                result.bookmarkData
+                bookmarkData =
+                    result.bookmarkData
 
-            metadata =
-                result.metadata
+                metadata =
+                    result.metadata
 
-            playbackController
-                .loadVideo(
-                    from: result.url
-                )
-
-            hasWallpaper =
                 playbackController
-                    .hasLoadedVideo
+                    .loadVideo(
+                        from: result.url
+                    )
 
-            statusMessage =
-                "Video ready."
+                hasWallpaper =
+                    playbackController
+                        .hasLoadedVideo
 
-        } catch let error
-            as VideoImportError {
+                statusMessage =
+                    "Video ready."
 
-            statusMessage =
-                error.localizedDescription
+            } catch let error
+                as VideoImportError {
 
-        } catch {
+                statusMessage =
+                    error.localizedDescription
 
-            statusMessage =
-                "Could not import the video: \(error.localizedDescription)"
+            } catch {
+
+                statusMessage =
+                    "Could not import the video: \(error.localizedDescription)"
+            }
+
+            isImporting = false
+        }
+    }
+
+    // MARK: - Set Wallpaper
+    private func setWallpaper() {
+
+        guard let player = playbackController.player else {
+            statusMessage = "No video is loaded."
+            return
         }
 
-        isImporting = false
-    }
-}
+        wallpaperManager.showWallpaper(
+            player: player,
+            scalingMode: scalingMode
+        )
 
-// MARK: - Wallpaper Placeholder
+        playbackController.play()
 
-private func setWallpaper() {
-    guard let player = playbackController.player else {
-        statusMessage = "No video is loaded."
-        return
+        hasWallpaper = true
+
+        statusMessage = "Live wallpaper is active — \(scalingMode.displayName)."
     }
-    wallpaperManager.showWallpaper(player: player)
-    playbackController.play()
-    hasWallpaper = true
-    statusMessage = "Live wallpaper is now active."
-}
-// MARK: - Remove
+
+    // MARK: - Remove Wallpaper
 
     private func removeWallpaper() {
+
         wallpaperManager.hideWallpaper()
 
         playbackController.pause()
 
         hasWallpaper = false
 
-        statusMessage = "Wallpaper removed."
+        statusMessage =
+            "Wallpaper removed."
     }
 
-// MARK: - Metadata Item
+    // MARK: - Metadata Item
 
-private func metadataItem(
-    title: String,
-    value: String
-) -> some View {
+    private func metadataItem(
+        title: String,
+        value: String
+    ) -> some View {
 
-    VStack(
-        alignment: .leading,
-        spacing: 3
-    ) {
+        VStack(
+            alignment: .leading,
+            spacing: 3
+        ) {
 
-        Text(title)
-            .font(.caption2)
-            .foregroundStyle(
-                .secondary
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(
+                    .secondary
+                )
+
+            Text(value)
+                .font(.caption)
+                .fontWeight(.medium)
+        }
+    }
+
+    // MARK: - Duration
+
+    private func formattedDuration(
+        _ seconds: Double
+    ) -> String {
+
+        guard seconds.isFinite,
+              seconds >= 0 else {
+
+            return "Unknown"
+        }
+
+        let totalSeconds =
+            Int(seconds.rounded())
+
+        let hours =
+            totalSeconds / 3600
+
+        let minutes =
+            (totalSeconds % 3600) / 60
+
+        let remainingSeconds =
+            totalSeconds % 60
+
+        if hours > 0 {
+
+            return String(
+                format:
+                    "%d:%02d:%02d",
+                hours,
+                minutes,
+                remainingSeconds
             )
-
-        Text(value)
-            .font(.caption)
-            .fontWeight(.medium)
-    }
-}
-
-// MARK: - Duration
-
-private func formattedDuration(
-    _ seconds: Double
-) -> String {
-
-    guard seconds.isFinite,
-          seconds >= 0 else {
-
-        return "Unknown"
-    }
-
-    let totalSeconds =
-        Int(seconds.rounded())
-
-    let hours =
-        totalSeconds / 3600
-
-    let minutes =
-        (totalSeconds % 3600) / 60
-
-    let remainingSeconds =
-        totalSeconds % 60
-
-    if hours > 0 {
+        }
 
         return String(
             format:
-                "%d:%02d:%02d",
-            hours,
+                "%d:%02d",
             minutes,
             remainingSeconds
         )
     }
 
-    return String(
-        format:
-            "%d:%02d",
-        minutes,
-        remainingSeconds
-    )
+    // MARK: - Status Color
+
+    private var statusColor: Color {
+
+        if isImporting {
+            return .orange
+        }
+
+        if playbackController
+            .playbackError != nil {
+
+            return .red
+        }
+
+        if playbackController
+            .isPlaying {
+
+            return .green
+        }
+
+        if metadata != nil {
+
+            return .blue
+        }
+
+        return .secondary
+    }
 }
 
-// MARK: - Status Color
-
-private var statusColor: Color {
-
-    if isImporting {
-        return .orange
-    }
-
-    if playbackController
-        .playbackError != nil {
-
-        return .red
-    }
-
-    if playbackController
-        .isPlaying {
-
-        return .green
-    }
-
-    if metadata != nil {
-
-        return .blue
-    }
-
-    return .secondary
-}
-
-}
 
 // MARK: - Settings
 
 struct SettingsView: View {
 
-@Environment(\.dismiss)
-private var dismiss
+    @Environment(\.dismiss)
+    private var dismiss
 
-var body: some View {
+    var body: some View {
 
-    VStack(spacing: 20) {
+        VStack(spacing: 20) {
 
-        HStack {
+            HStack {
 
-            Text("Settings")
-                .font(.title2)
-                .fontWeight(.bold)
+                Text("Settings")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+            }
+
+            Divider()
+
+            VStack(
+                alignment: .leading,
+                spacing: 14
+            ) {
+
+                Label(
+                    "General",
+                    systemImage:
+                        "gearshape"
+                )
+
+                Text(
+                    "General settings will be implemented in Stage 13."
+                )
+                .foregroundStyle(
+                    .secondary
+                )
+
+                Label(
+                    "Display",
+                    systemImage:
+                        "display"
+                )
+
+                Text(
+                    "Display settings will be implemented in Stage 13."
+                )
+                .foregroundStyle(
+                    .secondary
+                )
+
+                Label(
+                    "Performance",
+                    systemImage:
+                        "speedometer"
+                )
+
+                Text(
+                    "Performance settings will be implemented in Stage 9."
+                )
+                .foregroundStyle(
+                    .secondary
+                )
+            }
+            .frame(
+                maxWidth: .infinity,
+                alignment: .leading
+            )
 
             Spacer()
-
-            Button("Done") {
-                dismiss()
-            }
         }
-
-        Divider()
-
-        VStack(
-            alignment: .leading,
-            spacing: 14
-        ) {
-
-            Label(
-                "General",
-                systemImage:
-                    "gearshape"
-            )
-
-            Text(
-                "General settings will be implemented in Stage 13."
-            )
-            .foregroundStyle(
-                .secondary
-            )
-
-            Label(
-                "Display",
-                systemImage:
-                    "display"
-            )
-
-            Text(
-                "Display settings will be implemented in Stage 13."
-            )
-            .foregroundStyle(
-                .secondary
-            )
-
-            Label(
-                "Performance",
-                systemImage:
-                    "speedometer"
-            )
-
-            Text(
-                "Performance settings will be implemented in Stage 9."
-            )
-            .foregroundStyle(
-                .secondary
-            )
-        }
+        .padding(24)
         .frame(
-            maxWidth: .infinity,
-            alignment: .leading
+            width: 500,
+            height: 400
         )
-
-        Spacer()
     }
-    .padding(24)
-    .frame(
-        width: 500,
-        height: 400
-    )
 }
 
-}
+
+// MARK: - Preview
 
 #Preview {
-ContentView()
+    ContentView()
 }
