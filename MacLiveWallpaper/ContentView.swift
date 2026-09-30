@@ -13,6 +13,7 @@ struct ContentView: View {
 
 @StateObject private var playbackController =
     VideoPlayerController()
+@State private var wallpaperManager = WallpaperWindowManager()
 
 @State private var statusMessage = "Ready"
 
@@ -375,10 +376,6 @@ var body: some View {
     ) {
         SettingsView()
     }
-    .onDisappear {
-
-        playbackController.unloadVideo()
-    }
 }
 
 // MARK: - Import
@@ -436,27 +433,26 @@ private func importWallpaper() {
 // MARK: - Wallpaper Placeholder
 
 private func setWallpaper() {
-
-    statusMessage =
-        "Wallpaper engine will be connected in Stage 5."
+    guard let player = playbackController.player else {
+        statusMessage = "No video is loaded."
+        return
+    }
+    wallpaperManager.showWallpaper(player: player)
+    playbackController.play()
+    hasWallpaper = true
+    statusMessage = "Live wallpaper is now active."
 }
-
 // MARK: - Remove
 
-private func removeWallpaper() {
+    private func removeWallpaper() {
+        wallpaperManager.hideWallpaper()
 
-    playbackController
-        .unloadVideo()
+        playbackController.pause()
 
-    metadata = nil
+        hasWallpaper = false
 
-    bookmarkData = nil
-
-    hasWallpaper = false
-
-    statusMessage =
-        "Wallpaper removed."
-}
+        statusMessage = "Wallpaper removed."
+    }
 
 // MARK: - Metadata Item
 
