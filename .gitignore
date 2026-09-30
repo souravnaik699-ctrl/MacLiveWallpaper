@@ -1,0 +1,38 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Xcode project user data
+*.xccheckout
+
+# Archives
+*.xcarchive
+
+# Provisioning/signing
+*.mobileprovision
+*.provisionprofile
+
+# Temporary files
+*.tmp
+*.temp
+
+# Logs
+*.log
+
+# Local environment files
+.env
+.env.*
+
+# Generated files
+DerivedData/
