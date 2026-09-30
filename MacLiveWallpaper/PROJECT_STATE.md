@@ -1,12 +1,11 @@
-
 # MAC LIVE WALLPAPER — PROJECT STATE
 
 ## Project
 
 **Working name:** MAC LIVE WALLPAPER
 **Current version:** 0.1
-**Current stage:** Stage 2 — Basic SwiftUI Interface
-**Status:** Stage 2 complete after testing and Git commit
+**Current stage:** Stage 3 — Video Import
+**Status:** Stage 3 complete after testing and Git commit
 
 ---
 
@@ -24,233 +23,295 @@
 
 ## Technology Stack
 
-* Language: Swift
-* UI: SwiftUI
-* macOS integration: AppKit
-* Video: AVFoundation
-* Login item: SMAppService
-* Persistence: Codable / UserDefaults
-* Logging: OSLog / os.Logger
+* Swift
+* SwiftUI
+* AppKit
+* AVFoundation
+* UniformTypeIdentifiers
+* Foundation
+* OSLog
+* Codable / UserDefaults planned
+* SMAppService planned
 * Public Apple APIs only
-* No third-party dependencies currently
+* No third-party dependencies
 
 ---
 
-## Stage 1 Decisions
+# Stage 1 Decisions
 
-### App lifecycle
+## App Lifecycle
 
-Normal macOS application with a Dock presence during initial development, with menu-bar functionality to be added later.
+Normal macOS application with Dock presence during development.
 
-`LSUIElement` is not enabled at this stage.
+Menu-bar functionality will be added later.
 
-### Minimum macOS version
+`LSUIElement` is not currently enabled.
+
+## Minimum macOS
 
 macOS 14 Sonoma.
 
-### Architecture
+## Architecture
 
-Apple Silicon / arm64 as the primary development architecture.
-
-### File access
-
-Not decided yet.
-
-This decision must be made before Stage 3.
-
-### Audio
-
-Muted by default is planned. Audio controls are not implemented yet.
-
-### Looping
-
-AVQueuePlayer + AVPlayerLooper planned for a later stage.
-
-### Desktop integration
-
-Not implemented yet.
-
-### Static wallpaper fallback
-
-Not implemented yet.
+Apple Silicon / arm64 primary development target.
 
 ---
 
-## Stage 2 Implementation
+# Stage 3 File Access Decision
 
-### Main interface
+## Decision
 
-Implemented a basic SwiftUI interface containing:
+**Use security-scoped bookmarks to access the user's original video files.**
 
-* MAC LIVE WALLPAPER title
-* Subtitle
-* Current wallpaper preview area
-* Add Wallpaper button
-* Set Wallpaper button
-* Play button
-* Pause button
-* Remove button
-* Settings button
-* Status indicator/message
+The application does NOT copy the user's videos into its own storage.
 
-### Settings
+## Reason
 
-Added a temporary SwiftUI Settings sheet.
+Advantages:
 
-The Settings UI is only a placeholder at this stage. Full settings are planned for Stage 13.
+* Preserves the user's original video.
+* Avoids unnecessary duplication of potentially large 4K files.
+* Avoids unnecessary disk usage.
+* Allows the application to retain access to the original file through a security-scoped bookmark.
+* Fits the requirement that the original video remains untouched.
 
-### UI state
+Tradeoff:
 
-The interface currently uses local SwiftUI `@State` values for:
+* If the user moves or deletes the original file, the app may lose access.
+* The future wallpaper library must detect unavailable files and provide a relink/reselect workflow.
 
-* Wallpaper selection state
-* Playback state
+## Bookmark policy
+
+Bookmarks are created with:
+
+* Security scope
+* Read-only access
+
+The application must balance:
+
+`startAccessingSecurityScopedResource()`
+
+with:
+
+`stopAccessingSecurityScopedResource()`
+
+---
+
+# Stage 3 App Sandbox
+
+App Sandbox is enabled.
+
+User-selected file access:
+
+**Read Only**
+
+The application does not request read/write access to the user's original video files.
+
+No all-files entitlement is used.
+
+No network entitlement is required.
+
+---
+
+# Stage 3 Implementation
+
+## VideoImportService.swift
+
+Responsible for:
+
+* NSOpenPanel
+* MP4/MOV filtering
+* File-extension validation
+* Security-scoped access
+* Security-scoped bookmark creation
+* AVFoundation metadata loading
+* Codec detection
+* Resolution detection
+* Duration detection
+* Error handling
+* OSLog logging
+
+## ContentView.swift
+
+Now displays real imported video metadata.
+
+Current UI state includes:
+
+* Selected video filename
+* Resolution
+* Codec
+* Duration
+* Importing state
 * Status message
-* Settings sheet visibility
-
-### Important Stage 2 limitation
-
-The controls are UI placeholders.
-
-No real video file is imported yet.
-
-No AVPlayer exists yet.
-
-No wallpaper window exists yet.
-
-No desktop wallpaper is changed yet.
-
-Real video importing begins in Stage 3.
+* Bookmark data held in memory
 
 ---
 
-## Current Architecture
+# Supported Video Types
+
+Current UI selection:
+
+* MP4
+* MOV
+
+Uniform Type Identifiers used:
+
+* `UTType.mpeg4Movie`
+* `UTType.quickTimeMovie`
+
+The app also checks the filename extension.
+
+---
+
+# Metadata Currently Read
+
+For the first video track:
+
+* Filename
+* Duration
+* Natural width
+* Natural height
+* Codec
+
+Example:
 
 ```text
-MacLiveWallpaper/
-│
-├── MacLiveWallpaper.xcodeproj
-│
-├── MacLiveWallpaper/
-│   ├── MacLiveWallpaperApp.swift
-│   ├── ContentView.swift
-│   └── Assets.xcassets
-│
-├── .gitignore
-└── PROJECT_STATE.md
+wallpaper.mp4
+1920 × 1080
+H.264
+0:15
 ```
 
 ---
 
-## Current Files
+# Important Current Limitation
 
-### MacLiveWallpaperApp.swift
+The application can select and inspect videos, but it does NOT play them yet.
 
-Application entry point.
+There is currently:
 
-### ContentView.swift
+* No AVPlayer
+* No AVPlayerLayer
+* No video preview playback
+* No wallpaper window
+* No desktop integration
 
-Current main SwiftUI interface and temporary Settings view.
-
-### Assets.xcassets
-
-Application asset catalog.
-
-### .gitignore
-
-Xcode/Git generated-file exclusions.
-
-### PROJECT_STATE.md
-
-Project continuity and source-of-truth document.
+These belong to later stages.
 
 ---
 
-## Implemented
+# Current Architecture
+
+```text
+SwiftUI
+   │
+   ▼
+ContentView
+   │
+   │ Add Wallpaper
+   ▼
+VideoImportService
+   │
+   ├── NSOpenPanel
+   │
+   ├── Security-scoped bookmark
+   │
+   └── AVFoundation
+          │
+          ├── Duration
+          ├── Resolution
+          └── Codec
+```
+
+---
+
+# Implemented
 
 * [x] Stage 1 project setup
-* [x] SwiftUI macOS application
-* [x] macOS 14 minimum target
-* [x] Apple Silicon development target
 * [x] Git repository
 * [x] GitHub repository
 * [x] `.gitignore`
-* [x] `PROJECT_STATE.md`
-* [x] v0.1 tag
-* [x] Main SwiftUI interface
-* [x] Add Wallpaper UI action
-* [x] Preview placeholder
-* [x] Set Wallpaper UI action
-* [x] Play UI action
-* [x] Pause UI action
-* [x] Remove UI action
-* [x] Temporary Settings sheet
+* [x] PROJECT_STATE.md
+* [x] v0.1
+* [x] Stage 2 SwiftUI interface
+* [x] App Sandbox
+* [x] User Selected File — Read Only
+* [x] NSOpenPanel
+* [x] MP4 selection
+* [x] MOV selection
+* [x] Security-scoped bookmark creation
+* [x] Security-scoped resource access
+* [x] Video validation
+* [x] AVFoundation asset creation
+* [x] Duration detection
+* [x] Resolution detection
+* [x] Codec detection
+* [x] Import error handling
+* [x] OSLog logging
 
 ---
 
-## Not Implemented
+# Not Implemented
 
-* Video importing
-* NSOpenPanel
-* MP4/MOV validation
-* Security-scoped bookmarks
-* Application Support video storage
-* Video metadata
-* Codec detection
 * AVPlayer
-* AVPlayerLooper
-* Actual video preview
+* AVPlayerLayer / SwiftUI video rendering
+* Video playback
+* Play/Pause functionality
+* Seamless looping
+* Audio controls
 * Wallpaper window
 * Desktop integration
 * Full-screen wallpaper
 * Fill/Fit/Center
 * Wallpaper library
+* Persistent wallpaper model
 * Multiple displays
-* Menu-bar controls
-* Audio controls
+* Menu bar
 * Performance modes
 * Smart pausing
 * Battery optimization
 * Start at Login
 * Static wallpaper fallback
 * Lock Screen integration
+* Relink workflow for missing files
 * Final Settings
-* Error handling for video files
 * Release signing
 * Notarization
 * Packaging
-* Final application name
+* Final name
 
 ---
 
-## Known Bugs
+# Known Bugs
 
-None known if the Stage 2 checklist passes.
+None known if the Stage 3 checklist passes.
+
+Potential future condition:
+
+A bookmark may become stale or fail if the original file is moved/deleted. A future library/relink workflow must handle this gracefully.
 
 ---
 
-## Version
+# Version
 
 Current development version:
 
 **v0.1**
 
-Stage 2 is still part of the initial v0.1 foundation.
-
 ---
 
-## Next Stage
+# Next Stage
 
-**Stage 3 — Video Import**
+## Stage 4 — Video Preview
 
-Stage 3 will introduce:
+Planned:
 
-* NSOpenPanel
-* MP4/MOV file selection
-* File validation
-* File-access architecture decision
-* Permission handling
-* Video metadata
-* Codec/resolution information
+* AVPlayer
+* Video rendering in SwiftUI
+* Play
+* Pause
+* Stop
+* Real video preview
+* Playback error handling
 
-Do not begin Stage 3 until Stage 2 is confirmed working.
+Do not begin Stage 4 until Stage 3 is confirmed working.
