@@ -12,8 +12,8 @@ import UniformTypeIdentifiers
 import OSLog
 
 // MARK: - Video Metadata
+struct VideoMetadata: Codable, Equatable {
 
-struct VideoMetadata {
     let fileName: String
     let duration: Double
     let width: Int

@@ -1,49 +1,30 @@
-# ## Stage 5 — macOS Wallpaper Engine
+# ## Stage 6 — Wallpaper Scaling
 
 Implemented:
-- WallpaperWindowManager
-- Borderless wallpaper NSWindow
-- One wallpaper window per connected display
-- Desktop window level
-- Mouse-event passthrough
-- Spaces support
-- Mission Control stationary behavior
-- SwiftUI VideoPlayerView embedded into AppKit wallpaper windows
-- Set Wallpaper connected to wallpaper engine
-- Remove Wallpaper connected to wallpaper engine
-- Wallpaper continues independently from main UI window
+- VideoScalingMode
+- Fill mode
+- Fit mode
+- Center mode
+- AVPlayerLayer aspect-ratio-preserving presentation
+- Manual centered video presentation
+- Scaling selection in main UI
+- Wallpaper engine accepts selected scaling mode
 
-Architecture:
-SwiftUI
-    ↓
-VideoPlayerController
-    ↓
-AVPlayer
-    ↓
-WallpaperWindowManager
-    ↓
-NSWindow per display
-    ↓
-NSHostingView
-    ↓
-VideoPlayerView
-    ↓
-AVPlayerLayer
+Scaling behavior:
+- Fill = resizeAspectFill
+- Fit = resizeAspect
+- Center = manually centered presentation
 
-Important decisions:
-- Public macOS APIs only
-- No private WindowServer APIs
-- Wallpaper uses the documented desktop window level
-- Uses NSScreen.screens for connected displays
-- Uses screen.frame for complete display coverage
-- Wallpaper windows ignore mouse events
-- Wallpaper windows join all Spaces
-- Different wallpapers per display are NOT implemented yet
+Important:
+- Original video file is never modified.
+- No conversion or re-encoding is performed.
+- Fill may crop video edges.
+- Fit may leave unused/black areas.
+- Center does not upscale a smaller source video.
 
-Known limitations:
-- Final Fill/Fit/Center behavior is Stage 6
-- Seamless AVPlayerLooper looping is Stage 8
-- Battery optimization is Stage 9
-- Advanced per-display wallpaper selection is Stage 10
-- Full Lock Screen replacement is not supported
-- True full-screen application behavior depends on macOS Spaces/window-management rules
+Not implemented yet:
+- Persistent scaling preference
+- Settings window integration
+- Seamless AVPlayerLooper
+- Battery optimization
+- Per-display scaling preferences
