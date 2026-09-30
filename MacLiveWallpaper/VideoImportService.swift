@@ -10,262 +10,415 @@ import AppKit
 import AVFoundation
 import UniformTypeIdentifiers
 import OSLog
-import CoreMedia
 
-struct VideoMetadata: Sendable {
-let fileName: String
-let duration: Double
-let width: Int
-let height: Int
-let codec: String
+// MARK: - Video Metadata
+
+struct VideoMetadata {
+    let fileName: String
+    let duration: Double
+    let width: Int
+    let height: Int
+    let codec: String
 }
+
+// MARK: - Import Errors
 
 enum VideoImportError: LocalizedError {
-case noFileSelected
-case unsupportedFileType
-case securityAccessDenied
-case unableToCreateBookmark
-case invalidVideo
-case noVideoTrack
-case metadataUnavailable
+    case noFileSelected
+    case unsupportedFileType
+    case securityAccessDenied
+    case unableToCreateBookmark
+    case invalidVideo
+    case noVideoTrack
+    case metadataUnavailable
 
-var errorDescription: String? {
-    switch self {
-    case .noFileSelected:
-        return "No video was selected."
+    var errorDescription: String? {
+        switch self {
+        case .noFileSelected:
+            return "No video file was selected."
 
-    case .unsupportedFileType:
-        return "Please select an MP4 or MOV video."
+        case .unsupportedFileType:
+            return "Only MP4 and MOV video files are supported."
 
-    case .securityAccessDenied:
-        return "MAC LIVE WALLPAPER could not access the selected video."
+        case .securityAccessDenied:
+            return "macOS denied access to the selected video."
 
-    case .unableToCreateBookmark:
-        return "The app could not remember access to this video."
+        case .unableToCreateBookmark:
+            return "Unable to create a security-scoped bookmark."
 
-    case .invalidVideo:
-        return "The selected file is not a valid playable video."
+        case .invalidVideo:
+            return "The selected file is not a valid video."
 
-    case .noVideoTrack:
-        return "The selected file does not contain a video track."
+        case .noVideoTrack:
+            return "The selected file does not contain a video track."
 
-    case .metadataUnavailable:
-        return "The video's metadata could not be read."
+        case .metadataUnavailable:
+            return "Unable to read video metadata."
+        }
     }
 }
 
+// MARK: - Import Result
+
+struct VideoImportResult {
+    let url: URL
+    let bookmarkData: Data
+    let metadata: VideoMetadata
 }
 
-struct VideoImportResult: Sendable {
-let bookmarkData: Data
-let metadata: VideoMetadata
-}
-
-enum VideoImportService {
-
-private static let logger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "MacLiveWallpaper",
-    category: "VideoImport"
-)
+// MARK: - Video Import Service
 
 @MainActor
-static func selectAndImportVideo() async throws -> VideoImportResult {
+final class VideoImportService {
 
-    logger.info("Opening video selection panel.")
-
-    let panel = NSOpenPanel()
-
-    panel.title = "Choose a Wallpaper Video"
-    panel.message = "Select an MP4 or MOV video to use as your wallpaper."
-    panel.prompt = "Choose Video"
-
-    panel.canChooseFiles = true
-    panel.canChooseDirectories = false
-    panel.allowsMultipleSelection = false
-    panel.resolvesAliases = true
-
-    panel.allowedContentTypes = [
-        .mpeg4Movie,
-        .quickTimeMovie
-    ]
-
-    let response = panel.runModal()
-
-    guard response == .OK, let url = panel.url else {
-        logger.info("User cancelled video selection.")
-        throw VideoImportError.noFileSelected
-    }
-
-    logger.info("User selected video: \(url.lastPathComponent, privacy: .public)")
-
-    guard isSupportedVideoFile(url) else {
-        logger.error("Unsupported video file: \(url.path, privacy: .public)")
-        throw VideoImportError.unsupportedFileType
-    }
-
-    let hasAccess = url.startAccessingSecurityScopedResource()
-
-    guard hasAccess else {
-        logger.error("Could not obtain security-scoped access.")
-        throw VideoImportError.securityAccessDenied
-    }
-
-    defer {
-        url.stopAccessingSecurityScopedResource()
-        logger.debug("Released security-scoped access.")
-    }
-
-    let bookmarkData: Data
-
-    do {
-        bookmarkData = try url.bookmarkData(
-            options: [
-                .withSecurityScope,
-                .securityScopeAllowOnlyReadAccess
-            ],
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
-    } catch {
-        logger.error(
-            "Failed to create security-scoped bookmark: \(error.localizedDescription, privacy: .public)"
-        )
-
-        throw VideoImportError.unableToCreateBookmark
-    }
-
-    let metadata = try await readMetadata(from: url)
-
-    logger.info(
-        "Video imported successfully: \(metadata.fileName, privacy: .public), \(metadata.width)x\(metadata.height), codec \(metadata.codec, privacy: .public)"
+    private static let logger = Logger(
+        subsystem: "com.souravnaik.MacLiveWallpaper",
+        category: "VideoImport"
     )
 
-    return VideoImportResult(
-        bookmarkData: bookmarkData,
-        metadata: metadata
-    )
-}
+    // MARK: Select and Import Video
 
-private static func isSupportedVideoFile(_ url: URL) -> Bool {
-    let supportedExtensions = ["mp4", "mov"]
+    static func selectAndImportVideo() async throws -> VideoImportResult {
 
-    return supportedExtensions.contains(
-        url.pathExtension.lowercased()
-    )
-}
+        logger.info("Opening video file picker.")
 
-private static func readMetadata(
-    from url: URL
-) async throws -> VideoMetadata {
+        let panel = NSOpenPanel()
 
-    logger.info("Reading video metadata.")
+        panel.title = "Select a Video Wallpaper"
+        panel.message = "Choose an MP4 or MOV video."
+        panel.prompt = "Choose Video"
 
-    let asset = AVURLAsset(url: url)
+        // Allow only files
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
 
-    do {
-        let duration = try await asset.load(.duration)
+        // MP4 + MOV
+        panel.allowedContentTypes = [
+            UTType.mpeg4Movie,
+            UTType.quickTimeMovie
+        ]
 
-        guard duration.isValid, duration.seconds >= 0 else {
-            logger.error("Invalid video duration.")
-            throw VideoImportError.invalidVideo
+        let response = panel.runModal()
+
+        guard response == .OK,
+              let selectedURL = panel.url else {
+
+            logger.info("User cancelled video selection.")
+
+            throw VideoImportError.noFileSelected
         }
 
-        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        logger.info("Selected video: \(selectedURL.path)")
 
-        guard let videoTrack = videoTracks.first else {
-            logger.error("No video track found.")
-            throw VideoImportError.noVideoTrack
+        // MARK: File Type Validation
+
+        guard isSupportedVideoFile(selectedURL) else {
+
+            logger.error(
+                "Unsupported video file: \(selectedURL.path)"
+            )
+
+            throw VideoImportError.unsupportedFileType
         }
 
-        let naturalSize = try await videoTrack.load(.naturalSize)
+        // MARK: Security Scoped Access
 
-        let width = Int(abs(naturalSize.width.rounded()))
-        let height = Int(abs(naturalSize.height.rounded()))
+        let accessGranted = selectedURL.startAccessingSecurityScopedResource()
 
-        guard width > 0, height > 0 else {
-            logger.error("Invalid video dimensions.")
+        guard accessGranted else {
+
+            logger.error(
+                "Security scoped access denied."
+            )
+
+            throw VideoImportError.securityAccessDenied
+        }
+
+        // Keep access active while the video is being used.
+        // The caller will eventually release it.
+
+        do {
+
+            // MARK: Create Bookmark
+
+            let bookmarkData: Data
+
+            do {
+
+                bookmarkData = try selectedURL.bookmarkData(
+                    options: [
+                        .withSecurityScope,
+                        .securityScopeAllowOnlyReadAccess
+                    ],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+
+            } catch {
+
+                logger.error(
+                    "Failed to create security scoped bookmark: \(error.localizedDescription)"
+                )
+
+                selectedURL.stopAccessingSecurityScopedResource()
+
+                throw VideoImportError.unableToCreateBookmark
+            }
+
+            // MARK: Read Metadata
+
+            let metadata = try await readVideoMetadata(
+                from: selectedURL
+            )
+
+            logger.info(
+                """
+                Video imported successfully.
+                File: \(metadata.fileName)
+                Resolution: \(metadata.width)x\(metadata.height)
+                Duration: \(metadata.duration)
+                Codec: \(metadata.codec)
+                """
+            )
+
+            return VideoImportResult(
+                url: selectedURL,
+                bookmarkData: bookmarkData,
+                metadata: metadata
+            )
+
+        } catch let error as VideoImportError {
+
+            selectedURL.stopAccessingSecurityScopedResource()
+
+            throw error
+
+        } catch {
+
+            selectedURL.stopAccessingSecurityScopedResource()
+
+            logger.error(
+                "Video import failed: \(error.localizedDescription)"
+            )
+
+            throw error
+        }
+    }
+
+    // MARK: - Supported File Check
+
+    private static func isSupportedVideoFile(
+        _ url: URL
+    ) -> Bool {
+
+        let fileExtension = url.pathExtension.lowercased()
+
+        return fileExtension == "mp4" ||
+               fileExtension == "mov"
+    }
+
+    // MARK: - Read Video Metadata
+
+    private static func readVideoMetadata(
+        from url: URL
+    ) async throws -> VideoMetadata {
+
+        logger.info(
+            "Reading video metadata."
+        )
+
+        let asset = AVAsset(url: url)
+
+        // MARK: Duration
+
+        let durationTime: CMTime
+
+        do {
+            durationTime = try await asset.load(.duration)
+        } catch {
+
+            logger.error(
+                "Unable to load video duration."
+            )
+
             throw VideoImportError.metadataUnavailable
         }
 
-        let formatDescriptions = try await videoTrack.load(
-            .formatDescriptions
+        let duration = CMTimeGetSeconds(durationTime)
+
+        guard duration.isFinite,
+              duration > 0 else {
+
+            logger.error(
+                "Invalid video duration."
+            )
+
+            throw VideoImportError.invalidVideo
+        }
+
+        // MARK: Video Tracks
+
+        let videoTracks: [AVAssetTrack]
+
+        do {
+            videoTracks = try await asset.loadTracks(
+                withMediaType: .video
+            )
+        } catch {
+
+            logger.error(
+                "Unable to load video tracks."
+            )
+
+            throw VideoImportError.metadataUnavailable
+        }
+
+        guard let videoTrack = videoTracks.first else {
+
+            logger.error(
+                "No video track found."
+            )
+
+            throw VideoImportError.noVideoTrack
+        }
+
+        // MARK: Natural Size
+
+        let naturalSize: CGSize
+
+        do {
+            naturalSize = try await videoTrack.load(
+                .naturalSize
+            )
+        } catch {
+
+            logger.error(
+                "Unable to read video dimensions."
+            )
+
+            throw VideoImportError.metadataUnavailable
+        }
+
+        let width = Int(abs(naturalSize.width))
+        let height = Int(abs(naturalSize.height))
+
+        guard width > 0,
+              height > 0 else {
+
+            logger.error(
+                "Invalid video dimensions."
+            )
+
+            throw VideoImportError.invalidVideo
+        }
+
+        // MARK: Codec
+
+        let codec = await readCodec(
+            from: videoTrack
         )
 
-        let codec = codecName(
-            from: formatDescriptions.first
-        )
+        // MARK: File Name
+
+        let fileName = url.lastPathComponent
 
         return VideoMetadata(
-            fileName: url.lastPathComponent,
-            duration: duration.seconds,
+            fileName: fileName,
+            duration: duration,
             width: width,
             height: height,
             codec: codec
         )
-
-    } catch let error as VideoImportError {
-        throw error
-    } catch {
-        logger.error(
-            "Failed to read metadata: \(error.localizedDescription, privacy: .public)"
-        )
-
-        throw VideoImportError.metadataUnavailable
-    }
-}
-
-private static func codecName(
-    from formatDescription: CMFormatDescription?
-) -> String {
-
-    guard let formatDescription else {
-        return "Unknown"
     }
 
-    let codecType = CMFormatDescriptionGetMediaSubType(
-        formatDescription
-    )
+    // MARK: - Read Codec
 
-    switch codecType {
-    case kCMVideoCodecType_H264:
-        return "H.264"
+    private static func readCodec(
+        from track: AVAssetTrack
+    ) async -> String {
 
-    case kCMVideoCodecType_HEVC:
-        return "HEVC"
+        do {
 
-    case kCMVideoCodecType_AppleProRes422:
-        return "Apple ProRes 422"
+            let formatDescriptions = try await track.load(
+                .formatDescriptions
+            )
 
-    case kCMVideoCodecType_AppleProRes4444:
-        return "Apple ProRes 4444"
+            guard let formatDescription = formatDescriptions.first else {
+                return "Unknown"
+            }
 
-    case kCMVideoCodecType_AppleProRes422HQ:
-        return "Apple ProRes 422 HQ"
+            let mediaSubType =
+                CMFormatDescriptionGetMediaSubType(
+                    formatDescription
+                )
 
-    case kCMVideoCodecType_AppleProRes422LT:
-        return "Apple ProRes 422 LT"
+            let codec = fourCharacterCode(
+                mediaSubType
+            )
 
-    case kCMVideoCodecType_AppleProRes422Proxy:
-        return "Apple ProRes 422 Proxy"
+            switch codec {
 
-    default:
-        return fourCCString(codecType)
+            case "avc1":
+                return "H.264"
+
+            case "avc3":
+                return "H.264"
+
+            case "hvc1":
+                return "HEVC / H.265"
+
+            case "hev1":
+                return "HEVC / H.265"
+
+            case "apcn":
+                return "Apple ProRes 422"
+
+            case "apcs":
+                return "Apple ProRes 422 LT"
+
+            case "apch":
+                return "Apple ProRes 422 HQ"
+
+            case "apco":
+                return "Apple ProRes 422 Proxy"
+
+            case "ap4h":
+                return "Apple ProRes 4444"
+
+            case "ap4x":
+                return "Apple ProRes 4444 XQ"
+
+            default:
+                return codec
+            }
+
+        } catch {
+
+            logger.warning(
+                "Unable to determine codec."
+            )
+
+            return "Unknown"
+        }
+    }
+
+    // MARK: - Four Character Code
+
+    private static func fourCharacterCode(
+        _ code: FourCharCode
+    ) -> String {
+
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xFF),
+            UInt8((code >> 16) & 0xFF),
+            UInt8((code >> 8) & 0xFF),
+            UInt8(code & 0xFF)
+        ]
+
+        return String(
+            bytes: bytes,
+            encoding: .ascii
+        ) ?? "Unknown"
     }
 }
-
-private static func fourCCString(
-    _ code: FourCharCode
-) -> String {
-
-    let characters: [Character] = [
-        Character(UnicodeScalar((code >> 24) & 0xFF)!),
-        Character(UnicodeScalar((code >> 16) & 0xFF)!),
-        Character(UnicodeScalar((code >> 8) & 0xFF)!),
-        Character(UnicodeScalar(code & 0xFF)!)
-    ]
-
-    return String(characters)
-}
-
-}
-

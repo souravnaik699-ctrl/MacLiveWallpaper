@@ -7,30 +7,47 @@
 
 
 import SwiftUI
+import AVFoundation
 
 struct ContentView: View {
 
+@StateObject private var playbackController =
+    VideoPlayerController()
+
 @State private var statusMessage = "Ready"
+
 @State private var hasWallpaper = false
+
 @State private var showingSettings = false
+
 @State private var isImporting = false
+
 @State private var metadata: VideoMetadata?
+
 @State private var bookmarkData: Data?
 
 var body: some View {
+
     VStack(spacing: 0) {
 
         // MARK: - Header
 
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+
+            VStack(
+                alignment: .leading,
+                spacing: 4
+            ) {
+
                 Text("MAC LIVE WALLPAPER")
                     .font(.title2)
                     .fontWeight(.bold)
 
-                Text("Your animated desktop, made simple.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Your animated desktop, made simple."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -38,8 +55,11 @@ var body: some View {
             Button {
                 showingSettings = true
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.title3)
+
+                Image(
+                    systemName: "gearshape"
+                )
+                .font(.title3)
             }
             .buttonStyle(.borderless)
             .help("Settings")
@@ -50,122 +70,269 @@ var body: some View {
 
         Divider()
 
-        // MARK: - Preview
+        // MARK: - Video Preview
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(
+            alignment: .leading,
+            spacing: 12
+        ) {
 
             Text("Current Wallpaper")
                 .font(.headline)
 
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.quaternary)
 
-                VStack(spacing: 12) {
+                RoundedRectangle(
+                    cornerRadius: 14
+                )
+                .fill(.black)
 
-                    Image(
-                        systemName: metadata == nil
-                            ? "rectangle.on.rectangle.slash"
-                            : "video.fill"
+                if playbackController.hasLoadedVideo {
+
+                    VideoPlayerView(
+                        player:
+                            playbackController.player
                     )
-                    .font(.system(size: 42))
-                    .foregroundStyle(.secondary)
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: 14
+                        )
+                    )
 
-                    if let metadata {
-                        Text(metadata.fileName)
-                            .font(.headline)
-                            .lineLimit(1)
+                } else {
+
+                    VStack(spacing: 12) {
+
+                        Image(
+                            systemName:
+                                "rectangle.on.rectangle.slash"
+                        )
+                        .font(
+                            .system(size: 42)
+                        )
+                        .foregroundStyle(
+                            .secondary
+                        )
 
                         Text(
-                            "\(metadata.width) × \(metadata.height)"
+                            "No Video Selected"
+                        )
+                        .font(.headline)
+
+                        Text(
+                            "Add an MP4 or MOV video to preview it."
                         )
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                        Text(
-                            "\(metadata.codec) • \(formattedDuration(metadata.duration))"
+                        .foregroundStyle(
+                            .secondary
                         )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    } else {
-                        Text("No Wallpaper Selected")
-                            .font(.headline)
-
-                        Text("Add an MP4 or MOV video to begin.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
+                    .multilineTextAlignment(
+                        .center
+                    )
+                    .padding()
                 }
-                .multilineTextAlignment(.center)
-                .padding()
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 250)
+            .frame(
+                maxWidth: .infinity
+            )
+            .frame(height: 300)
+            .overlay {
+
+                if let error =
+                    playbackController.playbackError {
+
+                    VStack(spacing: 8) {
+
+                        Image(
+                            systemName:
+                                "exclamationmark.triangle.fill"
+                        )
+
+                        Text(error)
+                            .font(.caption)
+                            .multilineTextAlignment(
+                                .center
+                            )
+                    }
+                    .foregroundStyle(
+                        .white
+                    )
+                    .padding()
+                    .background(
+                        .black.opacity(0.75),
+                        in:
+                            RoundedRectangle(
+                                cornerRadius: 10
+                            )
+                    )
+                    .padding()
+                }
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
 
+        // MARK: - Metadata
+
+        if let metadata {
+
+            HStack(spacing: 16) {
+
+                metadataItem(
+                    title: "Resolution",
+                    value:
+                        "\(metadata.width) × \(metadata.height)"
+                )
+
+                metadataItem(
+                    title: "Codec",
+                    value: metadata.codec
+                )
+
+                metadataItem(
+                    title: "Duration",
+                    value:
+                        formattedDuration(
+                            metadata.duration
+                        )
+                )
+
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+        }
+
         // MARK: - Add Button
 
         Button {
+
             importWallpaper()
+
         } label: {
+
             if isImporting {
+
                 ProgressView()
-                    .controlSize(.small)
+                    .controlSize(
+                        .small
+                    )
+
             } else {
+
                 Label(
                     "Add Wallpaper",
                     systemImage: "plus"
                 )
             }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(
+            .borderedProminent
+        )
         .controlSize(.large)
         .disabled(isImporting)
         .padding(.horizontal, 24)
-        .padding(.top, 20)
+        .padding(.top, 18)
 
-        // MARK: - Controls
+        // MARK: - Playback Controls
 
         HStack(spacing: 10) {
 
             Button {
-                setWallpaper()
+
+                playbackController.restart()
+
+                statusMessage =
+                    "Restarted."
+
             } label: {
+
                 Label(
-                    "Set Wallpaper",
-                    systemImage: "desktopcomputer"
+                    "Restart",
+                    systemImage:
+                        "backward.end.fill"
                 )
             }
             .disabled(!hasWallpaper)
 
             Button {
-                playWallpaper()
+
+                playbackController.play()
+
+                statusMessage =
+                    "Playing."
+
             } label: {
+
                 Label(
                     "Play",
-                    systemImage: "play.fill"
+                    systemImage:
+                        "play.fill"
                 )
             }
             .disabled(!hasWallpaper)
 
             Button {
-                pauseWallpaper()
+
+                playbackController.pause()
+
+                statusMessage =
+                    "Paused."
+
             } label: {
+
                 Label(
                     "Pause",
-                    systemImage: "pause.fill"
+                    systemImage:
+                        "pause.fill"
                 )
             }
             .disabled(!hasWallpaper)
 
-            Button(role: .destructive) {
-                removeWallpaper()
+            Button {
+
+                playbackController.stop()
+
+                statusMessage =
+                    "Stopped."
+
             } label: {
+
+                Label(
+                    "Stop",
+                    systemImage:
+                        "stop.fill"
+                )
+            }
+            .disabled(!hasWallpaper)
+
+            Button {
+
+                setWallpaper()
+
+            } label: {
+
+                Label(
+                    "Set Wallpaper",
+                    systemImage:
+                        "desktopcomputer"
+                )
+            }
+            .disabled(!hasWallpaper)
+
+            Button(
+                role: .destructive
+            ) {
+
+                removeWallpaper()
+
+            } label: {
+
                 Label(
                     "Remove",
-                    systemImage: "trash"
+                    systemImage:
+                        "trash"
                 )
             }
             .disabled(!hasWallpaper)
@@ -179,13 +346,18 @@ var body: some View {
 
             Circle()
                 .fill(statusColor)
-                .frame(width: 8, height: 8)
+                .frame(
+                    width: 8,
+                    height: 8
+                )
 
             Text("Status:")
                 .fontWeight(.medium)
 
             Text(statusMessage)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(
+                    .secondary
+                )
 
             Spacer()
         }
@@ -193,9 +365,19 @@ var body: some View {
         .padding(.horizontal, 24)
         .padding(.bottom, 20)
     }
-    .frame(minWidth: 700, minHeight: 600)
-    .sheet(isPresented: $showingSettings) {
+    .frame(
+        minWidth: 760,
+        minHeight: 680
+    )
+    .sheet(
+        isPresented:
+            $showingSettings
+    ) {
         SettingsView()
+    }
+    .onDisappear {
+
+        playbackController.unloadVideo()
     }
 }
 
@@ -204,21 +386,39 @@ var body: some View {
 private func importWallpaper() {
 
     isImporting = true
-    statusMessage = "Choose an MP4 or MOV video..."
+
+    statusMessage =
+        "Choose an MP4 or MOV video..."
 
     Task {
-        do {
-            let result =
-                try await VideoImportService.selectAndImportVideo()
 
-            metadata = result.metadata
-            bookmarkData = result.bookmarkData
-            hasWallpaper = true
+        do {
+
+            let result =
+                try await
+                VideoImportService
+                    .selectAndImportVideo()
+
+            bookmarkData =
+                result.bookmarkData
+
+            metadata =
+                result.metadata
+
+            playbackController
+                .loadVideo(
+                    from: result.url
+                )
+
+            hasWallpaper =
+                playbackController
+                    .hasLoadedVideo
 
             statusMessage =
-                "Video imported successfully."
+                "Video ready."
 
-        } catch let error as VideoImportError {
+        } catch let error
+            as VideoImportError {
 
             statusMessage =
                 error.localizedDescription
@@ -233,59 +433,121 @@ private func importWallpaper() {
     }
 }
 
-// MARK: - Placeholder Controls
+// MARK: - Wallpaper Placeholder
 
 private func setWallpaper() {
+
     statusMessage =
         "Wallpaper engine will be connected in Stage 5."
 }
 
-private func playWallpaper() {
-    statusMessage =
-        "Video playback will be connected in Stage 4."
-}
-
-private func pauseWallpaper() {
-    statusMessage =
-        "Video playback will be connected in Stage 4."
-}
+// MARK: - Remove
 
 private func removeWallpaper() {
+
+    playbackController
+        .unloadVideo()
+
     metadata = nil
+
     bookmarkData = nil
+
     hasWallpaper = false
 
-    statusMessage = "Wallpaper removed."
+    statusMessage =
+        "Wallpaper removed."
 }
 
-// MARK: - Formatting
+// MARK: - Metadata Item
+
+private func metadataItem(
+    title: String,
+    value: String
+) -> some View {
+
+    VStack(
+        alignment: .leading,
+        spacing: 3
+    ) {
+
+        Text(title)
+            .font(.caption2)
+            .foregroundStyle(
+                .secondary
+            )
+
+        Text(value)
+            .font(.caption)
+            .fontWeight(.medium)
+    }
+}
+
+// MARK: - Duration
 
 private func formattedDuration(
     _ seconds: Double
 ) -> String {
 
-    guard seconds.isFinite, seconds >= 0 else {
-        return "Unknown duration"
+    guard seconds.isFinite,
+          seconds >= 0 else {
+
+        return "Unknown"
     }
 
-    let totalSeconds = Int(seconds.rounded())
-    let minutes = totalSeconds / 60
-    let remainingSeconds = totalSeconds % 60
+    let totalSeconds =
+        Int(seconds.rounded())
+
+    let hours =
+        totalSeconds / 3600
+
+    let minutes =
+        (totalSeconds % 3600) / 60
+
+    let remainingSeconds =
+        totalSeconds % 60
+
+    if hours > 0 {
+
+        return String(
+            format:
+                "%d:%02d:%02d",
+            hours,
+            minutes,
+            remainingSeconds
+        )
+    }
 
     return String(
-        format: "%d:%02d",
+        format:
+            "%d:%02d",
         minutes,
         remainingSeconds
     )
 }
 
+// MARK: - Status Color
+
 private var statusColor: Color {
+
     if isImporting {
         return .orange
     }
 
-    if metadata != nil {
+    if playbackController
+        .playbackError != nil {
+
+        return .red
+    }
+
+    if playbackController
+        .isPlaying {
+
         return .green
+    }
+
+    if metadata != nil {
+
+        return .blue
     }
 
     return .secondary
@@ -297,7 +559,8 @@ private var statusColor: Color {
 
 struct SettingsView: View {
 
-@Environment(\.dismiss) private var dismiss
+@Environment(\.dismiss)
+private var dismiss
 
 var body: some View {
 
@@ -325,33 +588,42 @@ var body: some View {
 
             Label(
                 "General",
-                systemImage: "gearshape"
+                systemImage:
+                    "gearshape"
             )
 
             Text(
                 "General settings will be implemented in Stage 13."
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(
+                .secondary
+            )
 
             Label(
                 "Display",
-                systemImage: "display"
+                systemImage:
+                    "display"
             )
 
             Text(
                 "Display settings will be implemented in Stage 13."
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(
+                .secondary
+            )
 
             Label(
                 "Performance",
-                systemImage: "speedometer"
+                systemImage:
+                    "speedometer"
             )
 
             Text(
                 "Performance settings will be implemented in Stage 9."
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(
+                .secondary
+            )
         }
         .frame(
             maxWidth: .infinity,
