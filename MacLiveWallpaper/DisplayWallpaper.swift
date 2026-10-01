@@ -7,6 +7,7 @@
 
 import AppKit
 import Foundation
+import OSLog
 
 @MainActor
 final class DisplayWallpaper {
@@ -18,7 +19,17 @@ final class DisplayWallpaper {
     let windowManager: WallpaperWindowManager
 
     let playbackController: VideoPlayerController
+    
+    private let staticWallpaperService =
+        StaticWallpaperService()
 
+    private let logger = Logger(
+        subsystem:
+            Bundle.main.bundleIdentifier
+            ?? "MacLiveWallpaper",
+        category: "DisplayWallpaper"
+    )
+    
     // MARK: - Initialization
 
     init(display: DisplayInfo) {
@@ -30,6 +41,44 @@ final class DisplayWallpaper {
 
         self.playbackController =
             VideoPlayerController()
+    }
+    func setStaticFallback(
+        from url: URL,
+        on screen: NSScreen
+    ) async {
+
+        do {
+
+            try await staticWallpaperService
+                .setFallbackWallpaper(
+                    from: url,
+                    on: screen
+                )
+
+            logger.info(
+                "Static fallback applied to display \(self.displayID)."
+            )
+
+        } catch {
+
+            logger.error(
+                "Failed to apply static fallback: \(error.localizedDescription)"
+            )
+        }
+    }
+    func showStaticFallback(
+        from url: URL,
+        on screen: NSScreen
+    ) async {
+
+        playbackController.pause()
+
+        windowManager.hideWallpaper()
+
+        await setStaticFallback(
+            from: url,
+            on: screen
+        )
     }
 
     // MARK: - Show
@@ -47,6 +96,7 @@ final class DisplayWallpaper {
         )
     }
 
+    
     // MARK: - Hide
 
     func hide() {
@@ -80,4 +130,5 @@ final class DisplayWallpaper {
 
         playbackController.pause()
     }
+    
 }

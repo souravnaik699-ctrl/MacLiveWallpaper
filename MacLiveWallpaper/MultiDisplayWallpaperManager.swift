@@ -526,6 +526,67 @@ final class MultiDisplayWallpaperManager: ObservableObject {
         }
     }
 
+    func showStaticFallback(
+        from url: URL,
+        on displayID: CGDirectDisplayID
+    ) async {
+
+        guard
+            let wallpaper =
+                wallpapers[displayID]
+        else {
+
+            logger.error(
+                "Cannot show fallback. Display \(displayID) not found."
+            )
+
+            return
+        }
+
+        guard
+            let screen = screen(
+                for: displayID
+            )
+        else {
+
+            logger.error(
+                "Cannot show fallback. Screen \(displayID) not found."
+            )
+
+            return
+        }
+
+        await wallpaper.showStaticFallback(
+            from: url,
+            on: screen
+        )
+    }
+    func showStaticFallbackOnAllDisplays(
+        from url: URL
+    ) async {
+
+        for display in displayManager.displays {
+
+            guard
+                let wallpaper =
+                    wallpapers[display.id]
+            else {
+                continue
+            }
+
+            guard
+                let screen =
+                    screen(for: display.id)
+            else {
+                continue
+            }
+
+            await wallpaper.showStaticFallback(
+                from: url,
+                on: screen
+            )
+        }
+    }
     // MARK: - Pause
 
     func pauseAll() {
