@@ -114,18 +114,12 @@ final class WallpaperLibrary: ObservableObject {
 
     // MARK: - Selection
 
-    func selectWallpaper(
-        id: UUID
-    ) {
-
-        guard items.contains(where: {
-            $0.id == id
-        }) else {
+    func selectWallpaper(id: UUID) {
+        guard items.contains(where: { $0.id == id }) else {
             return
         }
 
         selectedItemID = id
-
         saveLibrary()
     }
 

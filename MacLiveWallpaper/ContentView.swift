@@ -8,23 +8,25 @@
 import SwiftUI
 import AVFoundation
 
-
 struct ContentView: View {
 
     // MARK: - Controllers
 
-    @StateObject private var playbackController =
-        VideoPlayerController()
+    @StateObject private var powerMonitor: SystemPowerMonitor
+
+    @StateObject private var performanceController:
+        WallpaperPerformanceController
+
+    @StateObject private var playbackController:
+        VideoPlayerController
 
     @StateObject private var wallpaperLibrary =
         WallpaperLibrary()
-
 
     // MARK: - Wallpaper Engine
 
     @State private var wallpaperManager =
         WallpaperWindowManager()
-
 
     // MARK: - UI State
 
@@ -48,6 +50,36 @@ struct ContentView: View {
 
     @State private var selectedItemID: UUID?
 
+    // MARK: - Initialization
+
+    init() {
+        let playbackController =
+            VideoPlayerController()
+
+        let powerMonitor =
+            SystemPowerMonitor()
+
+        _playbackController =
+            StateObject(
+                wrappedValue: playbackController
+            )
+
+        _powerMonitor =
+            StateObject(
+                wrappedValue: powerMonitor
+            )
+
+        _performanceController =
+            StateObject(
+                wrappedValue:
+                    WallpaperPerformanceController(
+                        playbackController:
+                            playbackController,
+                        powerMonitor:
+                            powerMonitor
+                    )
+            )
+    }
 
     // MARK: - Body
 
@@ -78,12 +110,12 @@ struct ContentView: View {
         }
         .task {
 
-            selectedItemID = wallpaperLibrary.selectedItemID
+            selectedItemID =
+                wallpaperLibrary.selectedItemID
 
-            await restoreSelectedWallpaper()
+            restoreSelectedWallpaper()
         }
     }
-
 
     // MARK: - Header
 
@@ -105,12 +137,14 @@ struct ContentView: View {
         .padding()
     }
 
-
     // MARK: - Library Sidebar
 
     private var librarySidebar: some View {
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(
+            alignment: .leading,
+            spacing: 12
+        ) {
 
             HStack {
 
@@ -167,14 +201,22 @@ struct ContentView: View {
                     .tag(item.id)
                 }
                 .listStyle(.sidebar)
-                .onChange(of: selectedItemID) { _, newValue in
+                .onChange(of: selectedItemID) {
+                    _,
+                    newValue in
+
                     guard let newValue,
-                          newValue != wallpaperLibrary.selectedItemID else {
+                          newValue !=
+                            wallpaperLibrary.selectedItemID
+                    else {
                         return
                     }
 
                     Task { @MainActor in
-                        await selectWallpaper(id: newValue)
+
+                        selectWallpaper(
+                            id: newValue
+                        )
                     }
                 }
             }
@@ -182,7 +224,6 @@ struct ContentView: View {
         .padding()
         .frame(width: 280)
     }
-
 
     // MARK: - Library Row
 
@@ -222,7 +263,6 @@ struct ContentView: View {
         }
     }
 
-
     // MARK: - Main Content
 
     private var mainContent: some View {
@@ -235,6 +275,9 @@ struct ContentView: View {
 
             scalingArea
 
+            // Stage 9
+            performanceArea
+
             controls
 
             statusArea
@@ -245,7 +288,6 @@ struct ContentView: View {
             maxHeight: .infinity
         )
     }
-
 
     // MARK: - Preview
 
@@ -299,7 +341,6 @@ struct ContentView: View {
         )
     }
 
-
     // MARK: - Metadata
 
     @ViewBuilder
@@ -333,7 +374,6 @@ struct ContentView: View {
         }
     }
 
-
     private func metadataItem(
         title: String,
         value: String
@@ -353,7 +393,6 @@ struct ContentView: View {
                 .fontWeight(.medium)
         }
     }
-
 
     // MARK: - Scaling
 
@@ -384,6 +423,113 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Performance
+    // Stage 9
+
+    private var performanceArea: some View {
+
+        VStack(
+            alignment: .leading,
+            spacing: 10
+        ) {
+
+            Text("Performance")
+                .font(.headline)
+
+            HStack {
+
+                Text("Performance Mode")
+
+                Spacer()
+
+                Picker(
+                    "Performance Mode",
+                    selection:
+                        $performanceController.mode
+                ) {
+
+                    ForEach(
+                        WallpaperPerformanceMode.allCases
+                    ) { mode in
+
+                        Text(mode.displayName)
+                            .tag(mode)
+                    }
+                }
+                .frame(width: 180)
+            }
+
+            Text(
+                performanceController.mode.description
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            HStack {
+
+                Text(
+                    "Battery Threshold: " +
+                    "\(performanceController.batteryThreshold)%"
+                )
+
+                Spacer()
+
+                Stepper(
+                    "",
+                    value:
+                        $performanceController
+                            .batteryThreshold,
+                    in: 5...50,
+                    step: 5
+                )
+                .labelsHidden()
+            }
+
+            HStack(spacing: 8) {
+
+                Circle()
+                    .fill(
+                        performanceController
+                            .isAutomaticallyPaused
+                        ? Color.orange
+                        : Color.green
+                    )
+                    .frame(
+                        width: 8,
+                        height: 8
+                    )
+
+                if performanceController
+                    .isAutomaticallyPaused {
+
+                    Text(
+                        performanceController
+                            .pauseReason
+                        ?? "Playback paused automatically."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                } else {
+
+                    Text("Performance protection is inactive.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(
+                cornerRadius: 10
+            )
+            .fill(
+                Color.secondary.opacity(0.08)
+            )
+        )
+    }
 
     // MARK: - Controls
 
@@ -399,11 +545,17 @@ struct ContentView: View {
             Button("Play") {
 
                 playbackController.play()
+
+                performanceController
+                    .handleManualPlay()
             }
 
             Button("Pause") {
 
                 playbackController.pause()
+
+                performanceController
+                    .handleManualPause()
             }
 
             Button("Stop") {
@@ -425,7 +577,6 @@ struct ContentView: View {
             }
         }
     }
-
 
     // MARK: - Status
 
@@ -451,7 +602,6 @@ struct ContentView: View {
             Spacer()
         }
     }
-
 
     // MARK: - Import
 
@@ -503,112 +653,104 @@ struct ContentView: View {
         }
     }
 
-
     // MARK: - Select Wallpaper
 
     private func selectWallpaper(
         id: UUID
-    ) async {
+    ) {
 
         wallpaperLibrary.selectWallpaper(
             id: id
         )
 
-        guard let item =
-                wallpaperLibrary.item(
-                    withID: id
-                ) else {
-
-            statusMessage =
-                "Wallpaper not found."
-
-            return
-        }
-
-        do {
-
-            // resolveURL() IS throwing.
-
-            let url =
-                try wallpaperLibrary.resolveURL(
-                    for: id
-                )
-
-            try await playbackController.loadVideo(
-                from: url
-            )
-
-            metadata =
-                item.metadata
-
-            statusMessage =
-                "Loaded \(item.metadata.fileName)."
-
-        } catch {
-
-            playbackController.unloadVideo()
-
-            metadata = nil
-
-            statusMessage =
-                error.localizedDescription
-        }
-    }
-
-
-    // MARK: - Restore Selected Wallpaper
-
-    private func restoreSelectedWallpaper() async {
-
-        guard let selectedID =
-                wallpaperLibrary.selectedItemID else {
-
-            return
-        }
-
-        do {
-
-            // resolveURL() IS throwing.
-
-            let url =
-                try wallpaperLibrary.resolveURL(
-                    for: selectedID
-                )
+        Task {
 
             guard let item =
                     wallpaperLibrary.item(
-                        withID: selectedID
-                    ) else {
+                        withID: id
+                    )
+            else {
+
+                statusMessage =
+                    "Wallpaper not found."
 
                 return
             }
 
-            try await playbackController.loadVideo(
-                from: url
-            )
+            do {
 
-            metadata =
-                item.metadata
+                let url =
+                    try wallpaperLibrary.resolveURL(
+                        for: id
+                    )
 
-            statusMessage =
-                "Restored \(item.metadata.fileName) from the library."
+                try await playbackController.loadVideo(
+                    from: url
+                )
 
-        } catch {
+                metadata =
+                    item.metadata
 
-            metadata = nil
+                statusMessage =
+                    "Loaded \(item.metadata.fileName)."
 
-            statusMessage =
-                "Saved wallpaper unavailable: \(error.localizedDescription)"
+            } catch {
+
+                playbackController.unloadVideo()
+
+                metadata = nil
+
+                statusMessage =
+                    error.localizedDescription
+            }
         }
     }
 
+    // MARK: - Restore Selected Wallpaper
+
+    private func restoreSelectedWallpaper() {
+
+        guard let selectedID =
+                wallpaperLibrary.selectedItemID
+        else {
+            return
+        }
+        Task {
+            do {
+                let url =
+                    try wallpaperLibrary.resolveURL(
+                        for: selectedID
+                    )
+
+                let report =
+                    try await VideoPerformanceAnalyzer.analyze(
+                        url: url
+                    )
+
+                if let warning = report.warning {
+                    statusMessage = warning
+                }
+
+                try await playbackController.loadVideo(
+                    from: url
+                )
+
+            } catch {
+                playbackController.unloadVideo()
+                metadata = nil
+                statusMessage =
+                    error.localizedDescription
+            }
+        }
+    }
 
     // MARK: - Set Wallpaper
 
     private func setWallpaper() {
 
         guard let player =
-                playbackController.player else {
+                playbackController.player
+        else {
 
             statusMessage =
                 "No video is loaded."
@@ -623,12 +765,18 @@ struct ContentView: View {
 
         playbackController.play()
 
+        // Let Stage 9 evaluate power/performance
+        // conditions immediately.
+        performanceController.evaluate(
+            reason: "Wallpaper started"
+        )
+
         hasWallpaper = true
 
         statusMessage =
-            "Live wallpaper is active — \(scalingMode.displayName)."
+            "Live wallpaper is active — " +
+            "\(scalingMode.displayName)."
     }
-
 
     // MARK: - Remove Wallpaper
 
@@ -638,12 +786,13 @@ struct ContentView: View {
 
         playbackController.pause()
 
+        performanceController.handleManualPause()
+
         hasWallpaper = false
 
         statusMessage =
             "Wallpaper removed."
     }
-
 
     // MARK: - Remove Library Item
 
@@ -666,13 +815,15 @@ struct ContentView: View {
             id: id
         )
 
-        selectedItemID = wallpaperLibrary.selectedItemID
+        selectedItemID =
+            wallpaperLibrary.selectedItemID
 
         if let newSelectedID =
                 wallpaperLibrary.selectedItemID {
 
             Task { @MainActor in
-                await selectWallpaper(
+
+                selectWallpaper(
                     id: newSelectedID
                 )
             }
@@ -684,7 +835,6 @@ struct ContentView: View {
         }
     }
 
-
     // MARK: - Duration Formatting
 
     private func formatDuration(
@@ -692,7 +842,8 @@ struct ContentView: View {
     ) -> String {
 
         guard seconds.isFinite,
-              seconds >= 0 else {
+              seconds >= 0
+        else {
 
             return "--:--"
         }
@@ -713,7 +864,6 @@ struct ContentView: View {
         )
     }
 }
-
 
 // MARK: - Settings Placeholder
 

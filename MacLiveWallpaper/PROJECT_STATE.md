@@ -1,47 +1,51 @@
-# 
-## Stage 8 — Automatic Seamless Playback Looping
+# ## Stage 9 — Battery & Performance Optimization
 
 Implemented:
-- Replaced basic AVPlayer end-of-item seek loop
-- AVQueuePlayer-based playback
-- AVPlayerLooper-based automatic looping
-- Asset duration loaded before creating AVPlayerLooper
-- Proper looper lifecycle
-- Looper disabled during video unload
-- Async video loading
-- Playback error handling retained
-- Existing scaling modes retained
-- Existing wallpaper engine retained
-- Existing persistent wallpaper library retained
+- Performance modes
+- Quality mode
+- Balanced mode
+- Battery Saver mode
+- Low Power Mode monitoring
+- Thermal state monitoring
+- Battery percentage monitoring
+- Battery threshold
+- System sleep handling
+- Display sleep handling
+- System wake handling
+- Display wake handling
+- Automatic playback pause/resume
+- Manual pause protection
+- Video performance analysis
+- Resolution/frame-rate performance warnings
+- Codec identification
+- Playability/decodability checking
 
-Playback architecture:
+Performance architecture:
 
-WallpaperLibrary
-    ↓
-Security-scoped URL
-    ↓
-AVURLAsset
-    ↓
-Load duration
-    ↓
-AVPlayerItem
-    ↓
-AVQueuePlayer
-    ↓
-AVPlayerLooper
-    ↓
-AVPlayerLayer
-    ↓
-Wallpaper Window
+VideoPlayerController
+        ↓
+WallpaperPerformanceController
+        ↓
+SystemPowerMonitor
+        ↓
+Low Power Mode
+Battery Level
+Thermal State
+Sleep/Wake
+Occlusion
 
 Important decisions:
-- AVPlayerLooper owns looping behavior.
-- No manual didPlayToEndTime seek loop is used.
-- Looping replicas are not manually modified.
-- Original video file is never modified or re-encoded.
+- Original video files are never modified.
+- No video re-encoding.
+- No artificial resolution reduction.
+- No private macOS APIs.
+- Performance optimization controls playback rather than degrading source quality.
+- Automatic pause never overrides a user's intentional manual pause.
+- Actual battery/CPU savings are not guaranteed because they depend on system workload, video characteristics, displays, and hardware.
 
 Known limitations:
-- Source video itself may contain a visible cut at its loop boundary.
-- Battery/performance optimization is Stage 9.
-- Smart pausing is Stage 9.
-- Advanced multi-display behavior is Stage 10.
+- Advanced multi-display optimization is Stage 10.
+- Menu-bar controls are Stage 11.
+- Login item is Stage 12.
+- Settings refinement is Stage 13.
+- Static wallpaper fallback is Stage 14.

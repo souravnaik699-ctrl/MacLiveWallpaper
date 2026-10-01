@@ -184,6 +184,7 @@ final class VideoPlayerController: ObservableObject {
 
     // MARK: - Play
 
+    
     func play() {
 
         guard let player else {
