@@ -5,17 +5,25 @@
 //  Created by SOURAV NAIK on 01/10/26.
 //
 
+
+
 //import SwiftUI
 //import AppKit
 //
 //struct MenuBarView: View {
 //
+//    @Environment(\.openWindow) private var openWindow
+//
+//
 //    let isPlaying: Bool
 //    let displayCount: Int
+//    let loginItemEnabled: Bool
 //
 //    let onPlay: () -> Void
 //    let onPause: () -> Void
 //    let onStop: () -> Void
+//    let onToggleLoginItem: () -> Void
+//    let onOpenLoginItemsSettings: () -> Void
 //    let onOpenApp: () -> Void
 //    let onQuit: () -> Void
 //
@@ -50,27 +58,36 @@
 //            Button {
 //                onPlay()
 //            } label: {
-//                Label("Play", systemImage: "play.fill")
+//                Label(
+//                    "Play",
+//                    systemImage: "play.fill"
+//                )
 //            }
 //            .disabled(isPlaying)
 //
 //            Button {
 //                onPause()
 //            } label: {
-//                Label("Pause", systemImage: "pause.fill")
+//                Label(
+//                    "Pause",
+//                    systemImage: "pause.fill"
+//                )
 //            }
 //            .disabled(!isPlaying)
 //
 //            Button {
 //                onStop()
 //            } label: {
-//                Label("Stop", systemImage: "stop.fill")
+//                Label(
+//                    "Stop",
+//                    systemImage: "stop.fill"
+//                )
 //            }
 //
 //            Divider()
 //                .padding(.vertical, 4)
 //
-//            // MARK: Display Information
+//            // MARK: Displays
 //
 //            Label(
 //                "\(displayCount) Display\(displayCount == 1 ? "" : "s") Active",
@@ -81,10 +98,15 @@
 //            Divider()
 //                .padding(.vertical, 4)
 //
-//            // MARK: Application
+//            // MARK: Open Main Application
 //
 //            Button {
-//                onOpenApp()
+//                openWindow(id: "main")
+//
+//                NSApp.activate(
+//                    ignoringOtherApps: true
+//                )
+//
 //            } label: {
 //                Label(
 //                    "Open MAC LIVE WALLPAPER",
@@ -94,6 +116,8 @@
 //
 //            Divider()
 //                .padding(.vertical, 4)
+//
+//            // MARK: Quit
 //
 //            Button {
 //                onQuit()
@@ -110,6 +134,10 @@
 //}
 
 
+
+
+
+
 import SwiftUI
 import AppKit
 
@@ -119,10 +147,14 @@ struct MenuBarView: View {
 
     let isPlaying: Bool
     let displayCount: Int
+    let loginItemEnabled: Bool
 
     let onPlay: () -> Void
     let onPause: () -> Void
     let onStop: () -> Void
+    let onToggleLoginItem: () -> Void
+    let onOpenLoginItemsSettings: () -> Void
+    let onOpenApp: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
@@ -196,20 +228,42 @@ struct MenuBarView: View {
             Divider()
                 .padding(.vertical, 4)
 
+            // MARK: Login Item
+
+            Button {
+                onToggleLoginItem()
+            } label: {
+
+                Label(
+                    "Start at Login",
+                    systemImage:
+                        loginItemEnabled
+                        ? "checkmark.circle.fill"
+                        : "circle"
+                )
+            }
+
+            Button {
+                onOpenLoginItemsSettings()
+            } label: {
+
+                Label(
+                    "Login Items Settings",
+                    systemImage: "gear"
+                )
+            }
+
+            Divider()
+                .padding(.vertical, 4)
+
             // MARK: Open Main Application
+
 
             Button {
                 openWindow(id: "main")
-
-                NSApp.activate(
-                    ignoringOtherApps: true
-                )
-
+                NSApp.activate(ignoringOtherApps: true)
             } label: {
-                Label(
-                    "Open MAC LIVE WALLPAPER",
-                    systemImage: "macwindow"
-                )
+                Label("Open MAC LIVE WALLPAPER", systemImage: "macwindow")
             }
 
             Divider()
@@ -230,3 +284,4 @@ struct MenuBarView: View {
         .frame(width: 260)
     }
 }
+

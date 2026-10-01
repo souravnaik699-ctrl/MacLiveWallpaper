@@ -40,9 +40,10 @@ final class DisplayWallpaper {
             return
         }
 
-        windowManager.show(
-            on: screen,
-            player: player
+        
+        windowManager.showWallpaper(
+            player: player,
+            scalingMode: .fill
         )
     }
 
