@@ -1,14 +1,18 @@
-# [ ] LoginItemManager.swift created
-[ ] ServiceManagement imported
-[ ] SMAppService.mainApp used
-[ ] Project builds
-[ ] Menu bar shows Start at Login
-[ ] Start at Login can be enabled
-[ ] Start at Login can be disabled
-[ ] Login Items Settings opens
-[ ] MAC LIVE WALLPAPER appears in Login Items
-[ ] App launches after logging in
-[ ] App does not launch after disabling
-[ ] No LaunchAgent scripts created
-[ ] No private APIs used
-[ ] Existing wallpaper functionality still works
+# [ ] AppSettings.swift created
+[ ] AppSettingsDefaults.swift created
+[ ] SettingsView.swift created
+[ ] GeneralSettingsView.swift created
+[ ] PlaybackSettingsView.swift created
+[ ] AppearanceSettingsView.swift created
+[ ] PerformanceSettingsView.swift created
+[ ] Settings scene added
+[ ] Project builds successfully
+[ ] Settings appears in macOS app menu
+[ ] General tab works
+[ ] Playback tab works
+[ ] Appearance tab works
+[ ] Performance tab works
+[ ] Settings persist after quitting/relaunching
+[ ] Existing wallpaper still works
+[ ] Menu bar still works
+[ ] No compiler errors

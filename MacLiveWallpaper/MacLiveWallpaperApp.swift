@@ -259,6 +259,9 @@ struct MacLiveWallpaperApp: App {
 
     @StateObject private var loginItemManager =
         LoginItemManager()
+    init() {
+        AppSettingsDefaults.register()
+    }
 
     var body: some Scene {
 
@@ -370,6 +373,9 @@ struct MacLiveWallpaperApp: App {
             )
         }
         .menuBarExtraStyle(.menu)
+        Settings {
+            SettingsView()
+        }
     }
 }
 
