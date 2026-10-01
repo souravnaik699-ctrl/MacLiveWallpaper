@@ -46,6 +46,8 @@ struct ContentView: View {
     @State private var hasWallpaper =
         false
 
+    @State private var selectedItemID: UUID?
+
 
     // MARK: - Body
 
@@ -76,7 +78,9 @@ struct ContentView: View {
         }
         .task {
 
-            restoreSelectedWallpaper()
+            selectedItemID = wallpaperLibrary.selectedItemID
+
+            await restoreSelectedWallpaper()
         }
     }
 
@@ -154,22 +158,7 @@ struct ContentView: View {
 
                 List(
                     wallpaperLibrary.items,
-                    selection:
-                        Binding<UUID?>(
-                            get: {
-                                wallpaperLibrary.selectedItemID
-                            },
-                            set: { newValue in
-
-                                guard let newValue else {
-                                    return
-                                }
-
-                                selectWallpaper(
-                                    id: newValue
-                                )
-                            }
-                        )
+                    selection: $selectedItemID
                 ) { item in
 
                     wallpaperRow(
@@ -178,6 +167,16 @@ struct ContentView: View {
                     .tag(item.id)
                 }
                 .listStyle(.sidebar)
+                .onChange(of: selectedItemID) { _, newValue in
+                    guard let newValue,
+                          newValue != wallpaperLibrary.selectedItemID else {
+                        return
+                    }
+
+                    Task { @MainActor in
+                        await selectWallpaper(id: newValue)
+                    }
+                }
             }
         }
         .padding()
@@ -483,9 +482,8 @@ struct ContentView: View {
                     )
 
                 // Load it into the current player.
-                // loadVideo() is NOT throwing.
 
-                playbackController.loadVideo(
+                try await playbackController.loadVideo(
                     from: result.url
                 )
 
@@ -495,9 +493,7 @@ struct ContentView: View {
                 statusMessage =
                     "Added \(result.metadata.fileName) to the library."
 
-                wallpaperLibrary.selectWallpaper(
-                    id: item.id
-                )
+                selectedItemID = item.id
 
             } catch {
 
@@ -512,7 +508,7 @@ struct ContentView: View {
 
     private func selectWallpaper(
         id: UUID
-    ) {
+    ) async {
 
         wallpaperLibrary.selectWallpaper(
             id: id
@@ -538,9 +534,7 @@ struct ContentView: View {
                     for: id
                 )
 
-            // loadVideo() is NOT throwing.
-
-            playbackController.loadVideo(
+            try await playbackController.loadVideo(
                 from: url
             )
 
@@ -564,7 +558,7 @@ struct ContentView: View {
 
     // MARK: - Restore Selected Wallpaper
 
-    private func restoreSelectedWallpaper() {
+    private func restoreSelectedWallpaper() async {
 
         guard let selectedID =
                 wallpaperLibrary.selectedItemID else {
@@ -589,9 +583,7 @@ struct ContentView: View {
                 return
             }
 
-            // loadVideo() is NOT throwing.
-
-            playbackController.loadVideo(
+            try await playbackController.loadVideo(
                 from: url
             )
 
@@ -674,12 +666,16 @@ struct ContentView: View {
             id: id
         )
 
+        selectedItemID = wallpaperLibrary.selectedItemID
+
         if let newSelectedID =
                 wallpaperLibrary.selectedItemID {
 
-            selectWallpaper(
-                id: newSelectedID
-            )
+            Task { @MainActor in
+                await selectWallpaper(
+                    id: newSelectedID
+                )
+            }
 
         } else {
 

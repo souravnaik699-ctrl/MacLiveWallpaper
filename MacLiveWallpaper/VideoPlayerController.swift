@@ -1,109 +1,196 @@
-//
-//  VideoPlayerController.swift
-//  MacLiveWallpaper
-//
-//  Created by SOURAV NAIK on 01/10/26.
-//
-
-//
-//  VideoPlayerController.swift
-//  MacLiveWallpaper
-//
-//  Stage 4 — Video Playback Controller
-//
-
 import Foundation
-import Combine
 import AVFoundation
+import Combine
 import OSLog
+
 
 @MainActor
 final class VideoPlayerController: ObservableObject {
 
-    // MARK: - Published Properties
+    // MARK: - Published State
 
     @Published private(set) var player: AVPlayer?
+
     @Published private(set) var isPlaying = false
+
     @Published private(set) var hasLoadedVideo = false
+
     @Published private(set) var playbackError: String?
 
-    // MARK: - Private Properties
+
+    // MARK: - Private State
+
+    private var playerLooper: AVPlayerLooper?
 
     private var securityScopedURL: URL?
 
-    private var endObserver: NSObjectProtocol?
-    private var failureObserver: NSObjectProtocol?
+    private var notificationObservers: [
+        NSObjectProtocol
+    ] = []
+
+
+    // MARK: - Logger
 
     private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "MacLiveWallpaper",
+        subsystem:
+            Bundle.main.bundleIdentifier
+            ?? "MacLiveWallpaper",
         category: "VideoPlayback"
     )
 
-    // MARK: - Initialization
-
-    init() {
-        logger.debug("VideoPlayerController initialized")
-    }
-
-    deinit {
-        if let observer = endObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-
-        if let observer = failureObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
 
     // MARK: - Load Video
 
-    func loadVideo(from url: URL) {
+    func loadVideo(
+        from url: URL
+    ) async throws {
 
-        logger.info(
-            "Loading video: \(url.lastPathComponent, privacy: .public)"
-        )
-
-        // Remove previously loaded video.
+        // Remove the previous video first.
         unloadVideo()
 
         playbackError = nil
 
-        // Start security-scoped access.
-        if url.startAccessingSecurityScopedResource() {
-            securityScopedURL = url
+        logger.info(
+            "Loading video: \(url.lastPathComponent)"
+        )
 
-            logger.debug("Security-scoped access granted")
-        } else {
-            logger.warning("Security-scoped access was not granted")
+
+        // ---------------------------------------------------------
+        // Start security-scoped access
+        // ---------------------------------------------------------
+
+        let accessGranted =
+            url.startAccessingSecurityScopedResource()
+
+        guard accessGranted else {
+
+            logger.error(
+                "Security-scoped access denied: \(url.path)"
+            )
+
+            throw VideoPlaybackError
+                .securityAccessDenied
         }
 
-        // Create player.
-        let newPlayer = AVPlayer(url: url)
+        securityScopedURL = url
 
-        // Pause when reaching the end.
-        newPlayer.actionAtItemEnd = .pause
 
-        player = newPlayer
-        hasLoadedVideo = true
-        isPlaying = false
+        do {
 
-        // Install playback notifications.
-        installObservers(for: newPlayer.currentItem)
+            // -----------------------------------------------------
+            // Create AVURLAsset
+            // -----------------------------------------------------
 
-        logger.info("Video loaded successfully")
+            let asset = AVURLAsset(
+                url: url
+            )
+
+
+            // -----------------------------------------------------
+            // Load duration BEFORE creating AVPlayerLooper.
+            // -----------------------------------------------------
+
+            let duration =
+                try await asset.load(.duration)
+
+            guard duration.isNumeric,
+                  duration.seconds > 0 else {
+
+                throw VideoPlaybackError
+                    .invalidDuration
+            }
+
+
+            // -----------------------------------------------------
+            // Create player item
+            // -----------------------------------------------------
+
+            let playerItem =
+                AVPlayerItem(
+                    asset: asset
+                )
+
+
+            // -----------------------------------------------------
+            // Create queue player
+            // -----------------------------------------------------
+
+            let queuePlayer =
+                AVQueuePlayer(
+                    items: [
+                        playerItem
+                    ]
+                )
+
+            queuePlayer.actionAtItemEnd = .pause
+
+
+            // -----------------------------------------------------
+            // Create the automatic looper.
+            // -----------------------------------------------------
+
+            let looper =
+                AVPlayerLooper(
+                    player: queuePlayer,
+                    templateItem: playerItem
+                )
+
+
+            // -----------------------------------------------------
+            // Store everything.
+            // -----------------------------------------------------
+
+            self.player =
+                queuePlayer
+
+            self.playerLooper =
+                looper
+
+            self.hasLoadedVideo = true
+
+            self.isPlaying = false
+
+
+            // -----------------------------------------------------
+            // Install playback observers.
+            // -----------------------------------------------------
+
+            installObservers(
+                for: queuePlayer,
+                playerItem: playerItem
+            )
+
+
+            logger.info(
+                "Video loaded successfully: \(url.lastPathComponent)"
+            )
+
+            logger.info(
+                "Automatic looping enabled."
+            )
+
+        } catch {
+
+            logger.error(
+                "Failed to load video: \(error.localizedDescription)"
+            )
+
+            unloadVideo()
+
+            throw error
+        }
     }
+
 
     // MARK: - Play
 
     func play() {
 
         guard let player else {
-            logger.warning("Play requested but no player exists")
             return
         }
 
-        guard player.currentItem != nil else {
-            logger.warning("Play requested but player has no item")
+        guard hasLoadedVideo else {
             return
         }
 
@@ -113,15 +200,17 @@ final class VideoPlayerController: ObservableObject {
 
         isPlaying = true
 
-        logger.debug("Playback started")
+        logger.info(
+            "Playback started."
+        )
     }
+
 
     // MARK: - Pause
 
     func pause() {
 
         guard let player else {
-            logger.warning("Pause requested but no player exists")
             return
         }
 
@@ -129,204 +218,256 @@ final class VideoPlayerController: ObservableObject {
 
         isPlaying = false
 
-        logger.debug("Playback paused")
+        logger.info(
+            "Playback paused."
+        )
     }
+
 
     // MARK: - Stop
 
     func stop() {
 
         guard let player else {
-            logger.warning("Stop requested but no player exists")
             return
         }
 
         player.pause()
 
         player.seek(
-            to: .zero,
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
+            to: .zero
         )
 
         isPlaying = false
 
-        logger.debug("Playback stopped")
+        logger.info(
+            "Playback stopped."
+        )
     }
+
 
     // MARK: - Restart
 
     func restart() {
 
         guard let player else {
-            logger.warning("Restart requested but no player exists")
             return
         }
 
         playbackError = nil
 
         player.seek(
-            to: .zero,
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
+            to: .zero
+        ) { [weak self] finished in
 
-        player.play()
+            guard finished,
+                  let self else {
+                return
+            }
 
-        isPlaying = true
+            Task { @MainActor [weak self] in
 
-        logger.debug("Playback restarted")
+                guard let self else {
+                    return
+                }
+
+                self.player?.play()
+
+                self.isPlaying = true
+
+                self.logger.info(
+                    "Playback restarted."
+                )
+            }
+        }
     }
+
 
     // MARK: - Unload
 
     func unloadVideo() {
 
-        logger.debug("Unloading current video")
-
         removeObservers()
 
         player?.pause()
 
+        playerLooper?.disableLooping()
+
+        playerLooper = nil
+
         player = nil
 
         hasLoadedVideo = false
+
         isPlaying = false
+
         playbackError = nil
 
+
+        // ---------------------------------------------------------
         // Stop security-scoped access.
-        if let url = securityScopedURL {
+        // ---------------------------------------------------------
 
-            url.stopAccessingSecurityScopedResource()
+        if let securityScopedURL {
 
-            securityScopedURL = nil
+            securityScopedURL
+                .stopAccessingSecurityScopedResource()
 
-            logger.debug("Security-scoped access stopped")
+            self.securityScopedURL = nil
         }
+
+
+        logger.info(
+            "Video unloaded."
+        )
     }
 
-    // MARK: - Notification Observers
 
-    private func installObservers(for item: AVPlayerItem?) {
+    // MARK: - Observers
 
-        guard let item else {
-
-            logger.warning(
-                "Cannot install observers because AVPlayerItem is nil"
-            )
-
-            return
-        }
+    private func installObservers(
+        for player: AVQueuePlayer,
+        playerItem: AVPlayerItem
+    ) {
 
         removeObservers()
 
+
         // ---------------------------------------------------------
-        // Video reached the end
+        // Playback failure
         // ---------------------------------------------------------
 
-        endObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification,
-            object: item,
-            queue: .main
-        ) { [weak self] _ in
+        let failureObserver =
+            NotificationCenter.default.addObserver(
+                forName:
+                    AVPlayerItem
+                        .failedToPlayToEndTimeNotification,
+                object: playerItem,
+                queue: .main
+            ) { [weak self] notification in
 
-            Task { @MainActor [weak self] in
-                self?.handleVideoFinished()
+                let error =
+                    notification.userInfo?[
+                        AVPlayerItemFailedToPlayToEndTimeErrorKey
+                    ] as? Error
+
+                Task { @MainActor [weak self] in
+
+                    guard let self else {
+                        return
+                    }
+
+                    self.handlePlaybackFailure(
+                        error
+                    )
+                }
             }
-        }
+
 
         // ---------------------------------------------------------
-        // Playback failed
+        // Player item status failure
         // ---------------------------------------------------------
 
-        failureObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
-            object: item,
-            queue: .main
-        ) { [weak self] notification in
+        let statusObserver =
+            NotificationCenter.default.addObserver(
+                forName:
+                    AVPlayerItem
+                        .newErrorLogEntryNotification,
+                object: playerItem,
+                queue: .main
+            ) { [weak self] _ in
 
-            let error = notification.userInfo?[
-                AVPlayerItemFailedToPlayToEndTimeErrorKey
-            ] as? Error
+                Task { @MainActor [weak self] in
 
-            Task { @MainActor [weak self] in
-                self?.handlePlaybackFailure(error)
+                    guard let self else {
+                        return
+                    }
+
+                    self.logger.warning(
+                        "AVPlayerItem reported a new error-log entry."
+                    )
+                }
             }
-        }
+
+
+        notificationObservers = [
+            failureObserver,
+            statusObserver
+        ]
+
+
+        logger.info(
+            "Playback observers installed."
+        )
     }
 
-    // MARK: - Remove Observers
 
     private func removeObservers() {
 
-        if let observer = endObserver {
+        for observer in notificationObservers {
 
-            NotificationCenter.default.removeObserver(observer)
-
-            endObserver = nil
+            NotificationCenter.default
+                .removeObserver(observer)
         }
 
-        if let observer = failureObserver {
-
-            NotificationCenter.default.removeObserver(observer)
-
-            failureObserver = nil
-        }
+        notificationObservers.removeAll()
     }
 
-    // MARK: - Handle Video Finished
 
-    private func handleVideoFinished() {
+    // MARK: - Playback Failure
 
-        guard let player else {
-            return
-        }
-
-        logger.debug("Video reached the end")
-
-        // ---------------------------------------------------------
-        // Stage 4 basic looping
-        //
-        // Stage 8 will replace this with:
-        // AVQueuePlayer + AVPlayerLooper
-        //
-        // for true seamless looping.
-        // ---------------------------------------------------------
-
-        player.seek(
-            to: .zero,
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
-
-        player.play()
-
-        isPlaying = true
-
-        logger.debug("Video loop restarted")
-    }
-
-    // MARK: - Handle Playback Failure
-
-    private func handlePlaybackFailure(_ error: Error?) {
+    private func handlePlaybackFailure(
+        _ error: Error?
+    ) {
 
         isPlaying = false
 
-        if let error {
+        playbackError =
+            error?.localizedDescription
+            ?? "The video failed during playback."
 
-            playbackError = error.localizedDescription
+        logger.error(
+            "Playback failed: \(self.playbackError ?? "Unknown error")"
+        )
+    }
 
-            logger.error(
-                "Video playback failed: \(error.localizedDescription, privacy: .public)"
-            )
 
-        } else {
+    // MARK: - Deinitialization
 
-            playbackError = "The video could not be played."
+    deinit {
 
-            logger.error(
-                "Video playback failed with an unknown error"
-            )
+        for observer in notificationObservers {
+
+            NotificationCenter.default
+                .removeObserver(observer)
+        }
+    }
+}
+
+
+// MARK: - Playback Errors
+
+enum VideoPlaybackError:
+    LocalizedError {
+
+    case securityAccessDenied
+
+    case invalidDuration
+
+
+    var errorDescription: String? {
+
+        switch self {
+
+        case .securityAccessDenied:
+
+            return
+                "macOS did not grant access to the selected video."
+
+        case .invalidDuration:
+
+            return
+                "The selected video has an invalid or zero duration."
         }
     }
 }
