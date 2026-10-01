@@ -12,10 +12,12 @@ struct ContentView: View {
 
     // MARK: - Controllers
 
+    
     @StateObject private var powerMonitor: SystemPowerMonitor
 
     @StateObject private var performanceController:
         WallpaperPerformanceController
+    @StateObject private var displayManager: DisplayManager
 
     @StateObject private var playbackController:
         VideoPlayerController
@@ -58,6 +60,8 @@ struct ContentView: View {
 
         let powerMonitor =
             SystemPowerMonitor()
+        let displayManager =
+            DisplayManager()
 
         _playbackController =
             StateObject(
@@ -67,6 +71,10 @@ struct ContentView: View {
         _powerMonitor =
             StateObject(
                 wrappedValue: powerMonitor
+            )
+        _displayManager =
+            StateObject(
+                wrappedValue: displayManager
             )
 
         _performanceController =
@@ -745,22 +753,16 @@ struct ContentView: View {
     }
 
     // MARK: - Set Wallpaper
-
+    
     private func setWallpaper() {
 
-        guard let player =
-                playbackController.player
-        else {
-
-            statusMessage =
-                "No video is loaded."
-
+        guard let player = playbackController.player else {
+            statusMessage = "No video is loaded."
             return
         }
 
         wallpaperManager.showWallpaper(
-            player: player,
-            scalingMode: scalingMode
+            player: player
         )
 
         playbackController.play()
