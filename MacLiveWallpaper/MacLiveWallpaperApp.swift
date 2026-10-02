@@ -242,6 +242,8 @@ import AppKit
 
 @main
 struct MacLiveWallpaperApp: App {
+    @StateObject private var appCoordinator =
+        AppCoordinator()
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var appDelegate
 

@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 import OSLog
 
 @MainActor
-final class StaticWallpaperService {
+struct StaticWallpaperService {
 
     private let workspace = NSWorkspace.shared
 
@@ -73,49 +73,48 @@ final class StaticWallpaperService {
             "Creating static fallback from \(videoURL.lastPathComponent)"
         )
 
+        
+        
+        
+        
         let asset = AVURLAsset(url: videoURL)
 
-        let duration =
-            try await asset.load(.duration)
+        let duration = try await asset.load(.duration)
 
         guard duration.isNumeric else {
-
             throw StaticWallpaperError.invalidVideoDuration
         }
 
         let requestedTime: CMTime
 
         if duration.seconds > 1.0 {
-
-            // Use one second into the video.
-            requestedTime =
-                CMTime(
-                    seconds: 1.0,
-                    preferredTimescale: 600
-                )
-
+            requestedTime = CMTime(
+                seconds: 1.0,
+                preferredTimescale: 600
+            )
         } else {
-
             requestedTime = .zero
         }
 
-        let imageGenerator =
-            AVAssetImageGenerator(
-                asset: asset
-            )
+        let imageGenerator = AVAssetImageGenerator(
+            asset: asset
+        )
 
         imageGenerator.appliesPreferredTrackTransform = true
 
         imageGenerator.requestedTimeToleranceBefore = .zero
         imageGenerator.requestedTimeToleranceAfter = .zero
 
-        let result =
-            try await imageGenerator.image(
-                at: requestedTime
-            )
+        imageGenerator.appliesPreferredTrackTransform = true
+
+        imageGenerator.requestedTimeToleranceBefore = .zero
+        imageGenerator.requestedTimeToleranceAfter = .zero
+
+        let result = try await imageGenerator.image(
+            at: requestedTime
+        )
 
         let image = result.image
-
         let fileName =
             "\(videoURL.deletingPathExtension().lastPathComponent)-fallback-\(UUID().uuidString).jpg"
 
@@ -139,6 +138,7 @@ final class StaticWallpaperService {
 
     // MARK: - Set Desktop Wallpaper
 
+    @MainActor
     func setDesktopWallpaper(
         imageURL: URL,
         on screen: NSScreen
@@ -148,15 +148,8 @@ final class StaticWallpaperService {
             "Setting static wallpaper on \(screen.localizedName)"
         )
 
-        let options:
-            [NSWorkspace.DesktopImageOptionKey: Any] = [
-
-                .imageScaling:
-                    NSImageScaling.scaleProportionallyUpOrDown,
-
-                .allowClipping:
-                    true
-            ]
+        
+        let options: [NSWorkspace.DesktopImageOptionKey: Any] = [:]
 
         try workspace.setDesktopImageURL(
             imageURL,

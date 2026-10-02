@@ -621,34 +621,8 @@ struct ContentView: View {
             }
             
 
-            Button("Test Static Wallpaper") {
-                Task {
-                    guard let selectedID = wallpaperLibrary.selectedItemID else {
-                        statusMessage = "Select a wallpaper first."
-                        return
-                    }
 
-                    do {
-                        let url = try wallpaperLibrary.resolveURL(for: selectedID)
 
-                        let service = StaticWallpaperService()
-
-                        let imageURL = try await service.createFallbackImage(from: url)
-
-                        statusMessage = "Fallback created:\n\(imageURL.path)"
-
-                        if let screen = NSScreen.main {
-                            try service.setDesktopWallpaper(
-                                imageURL: imageURL,
-                                on: screen
-                            )
-                        }
-
-                    } catch {
-                        statusMessage = "Fallback failed:\n\(error.localizedDescription)"
-                    }
-                }
-            }
             // ----------------------------------------------------
             // PAUSE
             // ----------------------------------------------------
