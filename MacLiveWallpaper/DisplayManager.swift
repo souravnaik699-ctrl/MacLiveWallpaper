@@ -5,96 +5,6 @@
 //  Created by SOURAV NAIK on 01/10/26.
 //
 
-//import AppKit
-//import Combine
-//import CoreGraphics
-//import OSLog
-//
-//@MainActor
-//final class DisplayManager: ObservableObject {
-//
-//    // MARK: - Published Properties
-//
-//    @Published private(set) var displays: [DisplayInfo] = []
-//
-//    // MARK: - Private Properties
-//
-//    private var displayChangeTask: Task<Void, Never>?
-//
-//    private let logger = Logger(
-//        subsystem: Bundle.main.bundleIdentifier ?? "MacLiveWallpaper",
-//        category: "DisplayManager"
-//    )
-//
-//    // MARK: - Initialization
-//
-//    init() {
-//        refreshDisplays()
-//        startObservingDisplayChanges()
-//    }
-//
-//    deinit {
-//        displayChangeTask?.cancel()
-//    }
-//
-//    // MARK: - Display Management
-//
-//    func refreshDisplays() {
-//        let screens = NSScreen.screens
-//
-//        displays = screens.map { screen in
-//            DisplayInfo(screen: screen)
-//        }
-//
-//        logger.info(
-//            "Display list refreshed: \(self.displays.count) display(s)"
-//        )
-//    }
-//
-//    // MARK: - Display Change Observation
-//
-//    private func startObservingDisplayChanges() {
-//
-//        displayChangeTask = Task { @MainActor [weak self] in
-//
-//            guard let self else {
-//                return
-//            }
-//
-//            let notifications = NotificationCenter.default.notifications(
-//                named: NSApplication.didChangeScreenParametersNotification
-//            )
-//
-//            for await _ in notifications {
-//                guard !Task.isCancelled else {
-//                    break
-//                }
-//                try? await Task.sleep(for:.milliseconds(150))
-//                self.refreshDisplays()
-//            }
-//        }
-//    }
-//
-//    // MARK: - Helper Methods
-//
-//    func display(withID id: CGDirectDisplayID) -> DisplayInfo? {
-//        displays.first { display in
-//            display.id == id
-//        }
-//    }
-//
-//    func mainDisplay() -> DisplayInfo? {
-//        displays.first { display in
-//            display.isMain
-//        }
-//    }
-//
-//    var displayCount: Int {
-//        displays.count
-//    }
-//}
-
-
 
 import AppKit
 import Combine
@@ -113,6 +23,8 @@ final class DisplayManager: ObservableObject {
 
     private var displayChangeTask:
         Task<Void, Never>?
+
+    private var refreshTask: Task<Void, Never>?
 
     private let logger =
         Logger(
@@ -135,6 +47,7 @@ final class DisplayManager: ObservableObject {
     deinit {
 
         displayChangeTask?.cancel()
+        refreshTask?.cancel()
     }
 
     // MARK: - Refresh
@@ -182,7 +95,15 @@ final class DisplayManager: ObservableObject {
                         break
                     }
 
-                    self.refreshDisplays()
+                    // macOS can emit several screen-parameter notifications
+                    // for one configuration change. Coalesce them so the
+                    // wallpaper windows are rebuilt once after the change.
+                    self.refreshTask?.cancel()
+                    self.refreshTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard !Task.isCancelled else { return }
+                        self?.refreshDisplays()
+                    }
                 }
             }
     }

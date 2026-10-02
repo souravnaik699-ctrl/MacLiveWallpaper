@@ -254,6 +254,8 @@ final class MultiDisplayWallpaperManager: ObservableObject {
     private var wallpapers:
         [CGDirectDisplayID: DisplayWallpaper] = [:]
 
+    private var wallpaperIsActive = false
+
     private let displayManager:
         DisplayManager
 
@@ -263,10 +265,6 @@ final class MultiDisplayWallpaperManager: ObservableObject {
             ?? "MacLiveWallpaper",
         category: "MultiDisplay"
     )
-
-    // Task used to monitor display configuration changes.
-    private var displayObserverTask:
-        Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -280,78 +278,6 @@ final class MultiDisplayWallpaperManager: ObservableObject {
         // Create wallpaper objects for
         // displays that are already connected.
         synchronizeDisplays()
-        startDisplayObserver()
-        // Start monitoring for display changes.
-        startDisplayMonitoring()
-        
-    }
-
-    // MARK: - Deinitialization
-
-    deinit {
-
-        displayObserverTask?.cancel()
-    }
-
-    // MARK: - Display Monitoring
-
-    private func startDisplayMonitoring() {
-
-        displayObserverTask =
-            Task { @MainActor [weak self] in
-
-                let notifications =
-                    NotificationCenter.default.notifications(
-                        named:
-                            NSApplication
-                            .didChangeScreenParametersNotification
-                    )
-
-                for await _ in notifications {
-
-                    guard !Task.isCancelled else {
-                        break
-                    }
-
-                    guard let self else {
-                        break
-                    }
-
-                    self.synchronizeDisplays()
-                }
-            }
-    }
-
-    //display observer
-    private func startDisplayObserver() {
-
-        displayObserverTask = Task { @MainActor [weak self] in
-
-            let notifications =
-                NotificationCenter.default.notifications(
-                    named:
-                        NSApplication
-                        .didChangeScreenParametersNotification
-                )
-
-            for await _ in notifications {
-
-                guard !Task.isCancelled else {
-                    break
-                }
-
-                try? await Task.sleep(
-                    for: .milliseconds(150)
-                )
-
-                guard let self else {
-                    break
-                }
-
-                self.displayManager.refreshDisplays()
-                self.synchronizeDisplays()
-            }
-        }
     }
     // MARK: - Display Synchronization
 
@@ -414,9 +340,9 @@ final class MultiDisplayWallpaperManager: ObservableObject {
                 ] = wallpaper
             }
 
-            updateWallpaperWindow(
-                for: display
-            )
+            if wallpaperIsActive {
+                updateWallpaperWindow(for: display)
+            }
         }
 
         // MARK: Update Active Displays
@@ -520,9 +446,24 @@ final class MultiDisplayWallpaperManager: ObservableObject {
 
     func playAll() {
 
+        wallpaperIsActive = true
+
         for wallpaper in wallpapers.values {
 
             wallpaper.play()
+        }
+    }
+
+    var isPlaying: Bool {
+        wallpapers.values.contains {
+            $0.playbackController.isPlaying
+        }
+    }
+
+    func stopAll() {
+        wallpaperIsActive = false
+        for wallpaper in wallpapers.values {
+            wallpaper.stop()
         }
     }
 
@@ -594,6 +535,17 @@ final class MultiDisplayWallpaperManager: ObservableObject {
         for wallpaper in wallpapers.values {
 
             wallpaper.pause()
+        }
+    }
+    // MARK: - Hide All
+
+    func hideAll() {
+
+        wallpaperIsActive = false
+
+        for wallpaper in wallpapers.values {
+
+            wallpaper.hide()
         }
     }
 }

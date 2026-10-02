@@ -5,696 +5,6 @@
 //import AVFoundation
 //import CoreGraphics
 //import OSLog
-//
-//@MainActor
-//final class WallpaperWindowManager {
-//
-//    // MARK: - Playback State
-//
-//    private struct PlaybackSnapshot {
-//        let time: CMTime
-//        let wasPlaying: Bool
-//    }
-//
-//    // MARK: - Properties
-//
-//    private var windows: [CGDirectDisplayID: NSWindow] = [:]
-//
-//    private var currentPlayer: AVPlayer?
-//
-//    private var scalingMode: VideoScalingMode = .fill
-//
-//    private var wallpaperIsVisible = false
-//
-//    // Display notification observer
-//    private var displayNotificationTask: Task<Void, Never>?
-//
-//    // Delayed display rebuild
-//    private var displayRebuildTask: Task<Void, Never>?
-//
-//    // Sleep observer
-//    private var sleepTask: Task<Void, Never>?
-//
-//    // Wake observer
-//    private var wakeTask: Task<Void, Never>?
-//
-//    // Playback state captured immediately before sleep.
-//    //
-//    // This is important because after the Mac wakes,
-//    // AVPlayer may already report itself as paused.
-//    private var playbackSnapshotBeforeSleep: PlaybackSnapshot?
-//
-//    // MARK: - Logger
-//
-//    private let logger = Logger(
-//        subsystem: Bundle.main.bundleIdentifier
-//            ?? "MacLiveWallpaper",
-//        category: "WallpaperEngine"
-//    )
-//
-//    // MARK: - Initialization
-//
-//    init() {
-//        startScreenChangeMonitoring()
-//        startSleepMonitoring()
-//        startWakeMonitoring()
-//    }
-//
-//    deinit {
-//        displayNotificationTask?.cancel()
-//        displayRebuildTask?.cancel()
-//        sleepTask?.cancel()
-//        wakeTask?.cancel()
-//    }
-//
-//    // MARK: - Show Wallpaper
-//
-//    func showWallpaper(
-//        player: AVPlayer,
-//        scalingMode: VideoScalingMode
-//    ) {
-//        self.logger.info(
-//            "Starting wallpaper engine."
-//        )
-//
-//        self.currentPlayer = player
-//        self.scalingMode = scalingMode
-//        self.wallpaperIsVisible = true
-//
-//        // Any previous sleep snapshot is no longer needed.
-//        self.playbackSnapshotBeforeSleep = nil
-//
-//        self.rebuildWindows(
-//            preservingPlayback: false,
-//            playbackSnapshotOverride: nil
-//        )
-//    }
-//
-//    // MARK: - Hide Wallpaper
-//
-//    func hideWallpaper() {
-//        self.logger.info(
-//            "Stopping wallpaper engine."
-//        )
-//
-//        self.wallpaperIsVisible = false
-//        self.currentPlayer = nil
-//
-//        self.playbackSnapshotBeforeSleep = nil
-//
-//        self.displayRebuildTask?.cancel()
-//        self.displayRebuildTask = nil
-//
-//        self.closeAllWindows()
-//    }
-//
-//    // MARK: - Rebuild Wallpaper
-//
-//    private func rebuildWindows(
-//        preservingPlayback: Bool,
-//        playbackSnapshotOverride: PlaybackSnapshot?
-//    ) {
-//        guard self.wallpaperIsVisible,
-//              let player = self.currentPlayer
-//        else {
-//            return
-//        }
-//
-//        let snapshot: PlaybackSnapshot?
-//
-//        if let playbackSnapshotOverride {
-//            snapshot = playbackSnapshotOverride
-//        } else if preservingPlayback {
-//            snapshot = self.capturePlaybackState(
-//                from: player
-//            )
-//        } else {
-//            snapshot = nil
-//        }
-//
-//        // Pause the player before destroying the visual layers.
-//        //
-//        // IMPORTANT:
-//        // We keep the same AVPlayer alive.
-//        player.pause()
-//
-//        // Remove existing wallpaper windows.
-//        self.closeAllWindows()
-//
-//        let screens = NSScreen.screens
-//
-//        guard !screens.isEmpty else {
-//            self.logger.error(
-//                "No screens available while rebuilding wallpaper."
-//            )
-//            return
-//        }
-//
-//        self.logger.info(
-//            "Rebuilding wallpaper for \(screens.count) display(s)."
-//        )
-//
-//        // Create a wallpaper window for every display.
-//        for screen in screens {
-//
-//            let window = self.createWallpaperWindow(
-//                for: screen,
-//                player: player,
-//                scalingMode: self.scalingMode
-//            )
-//
-//            let id = self.displayID(
-//                for: screen
-//            )
-//
-//            self.windows[id] = window
-//
-//            // Make sure the wallpaper window is visible.
-//            window.orderFrontRegardless()
-//
-//            self.logger.info(
-//                "Wallpaper window bound to display: \(screen.localizedName)"
-//            )
-//        }
-//
-//        // Allow AppKit / SwiftUI / AVPlayerLayer
-//        // to finish rebuilding their hierarchy.
-//        Task { @MainActor [weak self, weak player] in
-//
-//            await Task.yield()
-//            await Task.yield()
-//
-//            guard !Task.isCancelled else {
-//                return
-//            }
-//
-//            guard let self,
-//                  self.wallpaperIsVisible,
-//                  let player
-//            else {
-//                return
-//            }
-//
-//            CATransaction.flush()
-//
-//            self.restorePlayback(
-//                snapshot,
-//                to: player
-//            )
-//        }
-//    }
-//
-//    // MARK: - Capture Playback State
-//
-//    private func capturePlaybackState(
-//        from player: AVPlayer
-//    ) -> PlaybackSnapshot {
-//
-//        let currentTime = player.currentTime()
-//
-//        let validTime: CMTime
-//
-//        if currentTime.isNumeric {
-//            validTime = currentTime
-//        } else {
-//            validTime = .zero
-//        }
-//
-//        let wasPlaying =
-//            player.timeControlStatus == .playing
-//            ||
-//            player.timeControlStatus
-//                == .waitingToPlayAtSpecifiedRate
-//
-//        return PlaybackSnapshot(
-//            time: validTime,
-//            wasPlaying: wasPlaying
-//        )
-//    }
-//
-//    // MARK: - Restore Playback
-//
-//    private func restorePlayback(
-//        _ snapshot: PlaybackSnapshot?,
-//        to player: AVPlayer
-//    ) {
-//        guard let snapshot else {
-//
-//            self.logger.info(
-//                "Wallpaper rebuilt. No playback restoration required."
-//            )
-//
-//            return
-//        }
-//
-//        guard let item = player.currentItem else {
-//
-//            self.logger.error(
-//                "Cannot restore playback because AVPlayer has no current item."
-//            )
-//
-//            return
-//        }
-//
-//        var restoreTime = snapshot.time
-//
-//        // Prevent seeking beyond the current item duration.
-//        let duration = item.duration
-//
-//        if duration.isNumeric,
-//           duration.seconds > 0,
-//           restoreTime.isNumeric {
-//
-//            let maximumTime = max(
-//                0,
-//                duration.seconds - 0.05
-//            )
-//
-//            if restoreTime.seconds > maximumTime {
-//
-//                restoreTime = CMTime(
-//                    seconds: maximumTime,
-//                    preferredTimescale: 600
-//                )
-//            }
-//        }
-//
-//        let shouldResumePlaying = snapshot.wasPlaying
-//
-//        player.seek(
-//            to: restoreTime,
-//            toleranceBefore: .zero,
-//            toleranceAfter: .zero
-//        ) { [weak player] finished in
-//
-//            guard let player else {
-//                return
-//            }
-//
-//            Task { @MainActor in
-//
-//                guard finished else {
-//
-//                    if shouldResumePlaying {
-//                        player.play()
-//                    } else {
-//                        player.pause()
-//                    }
-//
-//                    return
-//                }
-//
-//                if shouldResumePlaying {
-//                    player.play()
-//                } else {
-//                    player.pause()
-//                }
-//            }
-//        }
-//    }
-//
-//    // MARK: - Create Wallpaper Window
-//
-//    private func createWallpaperWindow(
-//        for screen: NSScreen,
-//        player: AVPlayer,
-//        scalingMode: VideoScalingMode
-//    ) -> NSWindow {
-//
-//        let window = NSWindow(
-//            contentRect: screen.frame,
-//            styleMask: [.borderless],
-//            backing: .buffered,
-//            defer: false,
-//            screen: screen
-//        )
-//
-//        window.isOpaque = true
-//        window.backgroundColor = .black
-//        window.hasShadow = false
-//
-//        // Wallpaper must never intercept mouse input.
-//        window.ignoresMouseEvents = true
-//        window.acceptsMouseMovedEvents = false
-//
-//        // Put the window at the desktop level.
-//        window.level = NSWindow.Level(
-//            rawValue: Int(
-//                CGWindowLevelForKey(
-//                    .desktopWindow
-//                )
-//            )
-//        )
-//
-//        // Make the wallpaper available across Spaces.
-//        window.collectionBehavior = [
-//            .canJoinAllSpaces,
-//            .stationary,
-//            .ignoresCycle
-//        ]
-//
-//        window.isMovable = false
-//        window.isExcludedFromWindowsMenu = true
-//
-//        // Match the physical display frame.
-//        window.setFrame(
-//            screen.frame,
-//            display: true
-//        )
-//
-//        // MARK: Video View
-//
-//        let videoView = VideoPlayerView(
-//            player: player,
-//            scalingMode: scalingMode
-//        )
-//
-//        let hostingView = NSHostingView(
-//            rootView: videoView
-//        )
-//
-//        hostingView.frame = NSRect(
-//            origin: .zero,
-//            size: window.contentLayoutRect.size
-//        )
-//
-//        hostingView.autoresizingMask = [
-//            .width,
-//            .height
-//        ]
-//
-//        window.contentView = hostingView
-//
-//        // Force layout immediately.
-//        hostingView.layoutSubtreeIfNeeded()
-//
-//        return window
-//    }
-//
-//    // MARK: - Sleep Monitoring
-//
-//    private func startSleepMonitoring() {
-//
-//        self.sleepTask = Task { @MainActor [weak self] in
-//
-//            let notifications =
-//                NSWorkspace.shared.notificationCenter.notifications(
-//                    named: NSWorkspace.willSleepNotification
-//                )
-//
-//            for await _ in notifications {
-//
-//                guard !Task.isCancelled else {
-//                    break
-//                }
-//
-//                guard let self else {
-//                    break
-//                }
-//
-//                self.handleSystemSleep()
-//            }
-//        }
-//    }
-//
-//    // MARK: - Handle System Sleep
-//
-//    private func handleSystemSleep() {
-//
-//        guard self.wallpaperIsVisible else {
-//
-//            self.logger.info(
-//                "Mac is going to sleep, but wallpaper is not active."
-//            )
-//
-//            return
-//        }
-//
-//        guard let player = self.currentPlayer else {
-//
-//            self.logger.warning(
-//                "Mac is going to sleep, but no wallpaper player exists."
-//            )
-//
-//            return
-//        }
-//
-//        // IMPORTANT:
-//        //
-//        // Capture the playback state BEFORE macOS suspends
-//        // the AVPlayer.
-//        self.playbackSnapshotBeforeSleep =
-//            self.capturePlaybackState(
-//                from: player
-//            )
-//
-//        self.logger.info(
-//            "Captured wallpaper playback state before sleep."
-//        )
-//    }
-//
-//    // MARK: - Wake Monitoring
-//
-//    private func startWakeMonitoring() {
-//
-//        self.wakeTask = Task { @MainActor [weak self] in
-//
-//            let notifications =
-//                NSWorkspace.shared.notificationCenter.notifications(
-//                    named: NSWorkspace.didWakeNotification
-//                )
-//
-//            for await _ in notifications {
-//
-//                guard !Task.isCancelled else {
-//                    break
-//                }
-//
-//                guard let self else {
-//                    break
-//                }
-//
-//                self.handleSystemWake()
-//            }
-//        }
-//    }
-//
-//    // MARK: - Handle System Wake
-//
-//    private func handleSystemWake() {
-//
-//        guard self.wallpaperIsVisible else {
-//
-//            self.logger.info(
-//                "Mac woke from sleep, but wallpaper is not active."
-//            )
-//
-//            return
-//        }
-//
-//        guard let player = self.currentPlayer else {
-//
-//            self.logger.warning(
-//                "Mac woke from sleep, but no wallpaper player exists."
-//            )
-//
-//            return
-//        }
-//
-//        self.logger.info(
-//            "Mac woke from sleep. Restoring wallpaper."
-//        )
-//
-//        // Use the state captured BEFORE sleep.
-//        //
-//        // Do not call capturePlaybackState() here because
-//        // AVPlayer may already report itself as paused.
-//        let snapshot = self.playbackSnapshotBeforeSleep
-//
-//        // Try twice because macOS may need a moment to
-//        // recreate the display/window environment.
-//        self.scheduleWakeRebuild(
-//            player: player,
-//            snapshot: snapshot,
-//            delay: 1.0,
-//            attempt: 1
-//        )
-//    }
-//
-//    // MARK: - Wake Rebuild
-//
-//    private func scheduleWakeRebuild(
-//        player: AVPlayer,
-//        snapshot: PlaybackSnapshot?,
-//        delay: TimeInterval,
-//        attempt: Int
-//    ) {
-//
-//        Task { @MainActor [weak self, weak player] in
-//
-//            guard !Task.isCancelled else {
-//                return
-//            }
-//
-//            try? await Task.sleep(
-//                nanoseconds: UInt64(
-//                    delay * 1_000_000_000
-//                )
-//            )
-//
-//            guard !Task.isCancelled else {
-//                return
-//            }
-//
-//            guard let self,
-//                  let player
-//            else {
-//                return
-//            }
-//
-//            guard self.wallpaperIsVisible else {
-//                return
-//            }
-//
-//            guard self.currentPlayer === player else {
-//                return
-//            }
-//
-//            self.logger.info(
-//                "Wake restoration attempt \(attempt)."
-//            )
-//
-//            self.rebuildWindows(
-//                preservingPlayback: true,
-//                playbackSnapshotOverride: snapshot
-//            )
-//
-//            // One additional rebuild gives macOS another
-//            // opportunity to finish restoring display state.
-//            if attempt < 2 {
-//
-//                self.scheduleWakeRebuild(
-//                    player: player,
-//                    snapshot: snapshot,
-//                    delay: 1.5,
-//                    attempt: attempt + 1
-//                )
-//            } else {
-//
-//                // The snapshot is no longer needed after
-//                // the final restoration attempt.
-//                self.playbackSnapshotBeforeSleep = nil
-//            }
-//        }
-//    }
-//
-//    // MARK: - Screen Change Monitoring
-//
-//    private func startScreenChangeMonitoring() {
-//
-//        self.displayNotificationTask =
-//            Task { @MainActor [weak self] in
-//
-//                let notifications =
-//                    NotificationCenter.default.notifications(
-//                        named:
-//                            NSApplication
-//                            .didChangeScreenParametersNotification
-//                    )
-//
-//                for await _ in notifications {
-//
-//                    guard !Task.isCancelled else {
-//                        break
-//                    }
-//
-//                    guard let self else {
-//                        break
-//                    }
-//
-//                    guard self.wallpaperIsVisible else {
-//                        continue
-//                    }
-//
-//                    self.scheduleDisplayRebuild()
-//                }
-//            }
-//    }
-//
-//    // MARK: - Schedule Display Rebuild
-//
-//    private func scheduleDisplayRebuild() {
-//
-//        // IMPORTANT:
-//        //
-//        // Only cancel the delayed rebuild task.
-//        //
-//        // Do NOT cancel displayNotificationTask,
-//        // because that is the permanent screen-change observer.
-//        self.displayRebuildTask?.cancel()
-//
-//        self.displayRebuildTask =
-//            Task { @MainActor [weak self] in
-//
-//                // Coalesce multiple display-change notifications.
-//                await Task.yield()
-//
-//                guard !Task.isCancelled else {
-//                    return
-//                }
-//
-//                guard let self else {
-//                    return
-//                }
-//
-//                guard self.wallpaperIsVisible else {
-//                    return
-//                }
-//
-//                self.rebuildWindows(
-//                    preservingPlayback: true,
-//                    playbackSnapshotOverride: nil
-//                )
-//            }
-//    }
-//
-//    // MARK: - Display ID
-//
-//    private func displayID(
-//        for screen: NSScreen
-//    ) -> CGDirectDisplayID {
-//
-//        screen.deviceDescription[
-//            NSDeviceDescriptionKey(
-//                "NSScreenNumber"
-//            )
-//        ] as? CGDirectDisplayID
-//        ?? CGMainDisplayID()
-//    }
-//
-//    // MARK: - Close Windows
-//
-//    private func closeAllWindows() {
-//
-//        guard !self.windows.isEmpty else {
-//            return
-//        }
-//
-//        self.logger.info(
-//            "Closing \(self.windows.count) wallpaper window(s)."
-//        )
-//
-//        for window in self.windows.values {
-//
-//            window.orderOut(nil)
-//            window.contentView = nil
-//            window.close()
-//        }
-//
-//        self.windows.removeAll()
-//    }
-//}
-
 
 import AppKit
 import SwiftUI
@@ -715,6 +25,7 @@ final class WallpaperWindowManager {
     // MARK: - Properties
 
     private var windows: [CGDirectDisplayID: NSWindow] = [:]
+    private let targetDisplayID: CGDirectDisplayID
 
     private var currentPlayer: AVPlayer?
 
@@ -742,8 +53,9 @@ final class WallpaperWindowManager {
 
     // MARK: - Initialization
 
-    init() {
-        startScreenChangeMonitoring()
+  
+    init(displayID: CGDirectDisplayID) {
+        self.targetDisplayID = displayID
         startWakeMonitoring()
     }
 
@@ -820,124 +132,78 @@ final class WallpaperWindowManager {
             )
             : nil
 
-        /*
-         Pause the player before replacing the visual windows.
-         */
+        // Find ONLY the display this manager owns.
+        guard let screen = NSScreen.screens.first(
+            where: {
+                displayID(for: $0) == targetDisplayID
+            }
+        ) else {
 
-        player.pause()
-
-        /*
-         Hide existing windows.
-
-         We intentionally DO NOT close them.
-         */
-
-        hideAllWindows()
-
-        let screens = NSScreen.screens
-
-        guard !screens.isEmpty else {
-
-            logger.error(
-                "No displays detected."
+            logger.warning(
+                "Target display \(self.targetDisplayID) is currently unavailable."
             )
+
+            hideAllWindows()
 
             return
         }
 
-        logger.info(
-            "Creating/reusing wallpaper windows for \(screens.count) display(s)."
-        )
+        /*
+         Pause only this display's player.
+
+         Each DisplayWallpaper has its own VideoPlayerController,
+         so this does not pause another display's player.
+         */
+        player.pause()
 
         /*
-         Create or reuse one window per display.
+         Hide the existing window for this display.
          */
+        hideAllWindows()
 
-        for screen in screens {
+        logger.info(
+            "Creating/reusing wallpaper window for display: \(screen.localizedName)"
+        )
 
-            let displayID = displayID(
-                for: screen
+        let window: NSWindow
+
+        if let existingWindow = windows[targetDisplayID] {
+
+            window = existingWindow
+
+            window.setFrame(
+                screen.frame,
+                display: false
             )
 
-            let window: NSWindow
+            setContent(
+                of: window,
+                player: player
+            )
 
-            if let existingWindow = windows[displayID] {
+            logger.info(
+                "Reusing wallpaper window for display: \(screen.localizedName)"
+            )
 
-                window = existingWindow
+        } else {
 
-                /*
-                 Update frame.
-                 */
+            window = createWallpaperWindow(
+                for: screen,
+                player: player
+            )
 
-                window.setFrame(
-                    screen.frame,
-                    display: false
-                )
+            windows[targetDisplayID] = window
 
-                /*
-                 Replace the SwiftUI content safely.
-                 */
-
-                setContent(
-                    of: window,
-                    player: player
-                )
-
-                logger.info(
-                    "Reusing wallpaper window for display: \(screen.localizedName)"
-                )
-
-            } else {
-
-                window = createWallpaperWindow(
-                    for: screen,
-                    player: player
-                )
-
-                windows[displayID] = window
-
-                logger.info(
-                    "Created wallpaper window for display: \(screen.localizedName)"
-                )
-            }
-
-            window.orderFrontRegardless()
+            logger.info(
+                "Created wallpaper window for display: \(screen.localizedName)"
+            )
         }
 
-        /*
-         Remove windows for displays that are no longer connected.
-
-         IMPORTANT:
-         We only hide them here.
-         We don't call close().
-         */
-
-        let connectedDisplayIDs = Set(
-            screens.map {
-                displayID(for: $0)
-            }
-        )
-
-        for id in windows.keys {
-
-            if !connectedDisplayIDs.contains(id) {
-
-                windows[id]?.orderOut(nil)
-
-                /*
-                 Remove our strong reference only after the window
-                 has been hidden.
-                 */
-
-                windows.removeValue(
-                    forKey: id
-                )
-            }
-        }
+        window.orderFrontRegardless()
 
         /*
-         Give AppKit/SwiftUI a chance to finish creating the
-         player layers before restoring playback.
+         Give AppKit / SwiftUI time to finish creating
+         the video layer before playback starts.
          */
 
         if let snapshot {
@@ -990,7 +256,7 @@ final class WallpaperWindowManager {
                 player.play()
 
                 self.logger.info(
-                    "Wallpaper playback started."
+                    "Wallpaper playback started on display \(self.targetDisplayID)."
                 )
             }
         }
@@ -1212,71 +478,6 @@ final class WallpaperWindowManager {
             )
         ] as? CGDirectDisplayID
         ?? CGMainDisplayID()
-    }
-
-    // MARK: - Screen Change Monitoring
-
-    private func startScreenChangeMonitoring() {
-
-        displayNotificationTask =
-            Task { @MainActor [weak self] in
-
-                let notifications =
-                    NotificationCenter.default.notifications(
-                        named:
-                            NSApplication
-                            .didChangeScreenParametersNotification
-                    )
-
-                for await _ in notifications {
-
-                    guard !Task.isCancelled else {
-                        break
-                    }
-
-                    guard let self else {
-                        break
-                    }
-
-                    guard self.wallpaperIsVisible else {
-                        continue
-                    }
-
-                    self.scheduleDisplayRebuild()
-                }
-            }
-    }
-
-    // MARK: - Schedule Display Rebuild
-
-    private func scheduleDisplayRebuild() {
-
-        displayRebuildTask?.cancel()
-
-        displayRebuildTask =
-            Task { @MainActor [weak self] in
-
-                /*
-                 Allow macOS to finish the display
-                 configuration notification.
-                 */
-
-                await Task.yield()
-
-                guard !Task.isCancelled,
-                      let self
-                else {
-                    return
-                }
-
-                guard self.wallpaperIsVisible else {
-                    return
-                }
-
-                self.rebuildWindows(
-                    preservingPlayback: true
-                )
-            }
     }
 
     // MARK: - Wake Monitoring

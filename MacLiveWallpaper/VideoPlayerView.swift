@@ -319,15 +319,12 @@ final class PlayerContainerView: NSView {
         // Rebind the player whenever that happens.
 
         if window != nil {
-
-            playerLayer.player =
-                playerLayer.player
-
-            updateVideoLayout()
-
-            layer?.layoutIfNeeded()
-            playerLayer.setNeedsLayout()
-            playerLayer.setNeedsDisplay()
+            // Defer layer sizing until AppKit finishes moving this view into
+            // its window. Sizing synchronously here can re-enter NSView.layout.
+            DispatchQueue.main.async { [weak self] in
+                self?.updateVideoLayout()
+                self?.playerLayer.setNeedsDisplay()
+            }
         }
     }
 

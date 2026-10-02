@@ -37,7 +37,9 @@ final class DisplayWallpaper {
         self.displayID = display.id
 
         self.windowManager =
-            WallpaperWindowManager()
+            WallpaperWindowManager(
+                displayID: self.displayID
+            )
 
         self.playbackController =
             VideoPlayerController()
@@ -92,7 +94,11 @@ final class DisplayWallpaper {
         
         windowManager.showWallpaper(
             player: player,
-            scalingMode: .fill
+            scalingMode: VideoScalingMode(
+                settingValue: UserDefaults.standard.string(
+                    forKey: AppSettings.scalingMode
+                ) ?? "Fill"
+            )
         )
     }
 
@@ -120,8 +126,21 @@ final class DisplayWallpaper {
     // MARK: - Play
 
     func play() {
-
+        guard let player = playbackController.player else { return }
+        windowManager.showWallpaper(
+            player: player,
+            scalingMode: VideoScalingMode(
+                settingValue: UserDefaults.standard.string(
+                    forKey: AppSettings.scalingMode
+                ) ?? "Fill"
+            )
+        )
         playbackController.play()
+    }
+
+    func stop() {
+        playbackController.stop()
+        windowManager.hideWallpaper()
     }
 
     // MARK: - Pause

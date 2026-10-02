@@ -27,8 +27,19 @@ struct ContentView: View {
     // UI STATE
     // ============================================================
 
-    @State
-    private var scalingMode: VideoScalingMode = .fill
+    @AppStorage(AppSettings.scalingMode)
+    private var scalingModeSetting = "Fill"
+
+    private var scalingMode: VideoScalingMode {
+        VideoScalingMode(settingValue: scalingModeSetting)
+    }
+
+    private var scalingModeBinding: Binding<VideoScalingMode> {
+        Binding(
+            get: { scalingMode },
+            set: { scalingModeSetting = $0.displayName }
+        )
+    }
 
     @State
     private var statusMessage = "No wallpaper selected."
@@ -91,6 +102,11 @@ struct ContentView: View {
                 wallpaperLibrary.selectedItemID
 
             restoreSelectedWallpaper()
+        }
+        .onChange(of: scalingModeSetting) { _, _ in
+            if hasWallpaper {
+                appModel.synchronizeDisplays()
+            }
         }
     }
 
@@ -405,7 +421,7 @@ struct ContentView: View {
 
             Picker(
                 "Scaling",
-                selection: $scalingMode
+                selection: scalingModeBinding
             ) {
 
                 ForEach(
@@ -604,6 +620,7 @@ struct ContentView: View {
                     .playbackController
                     .restart()
             }
+            .disabled(!hasWallpaper)
 
             // ----------------------------------------------------
             // PLAY
@@ -619,9 +636,7 @@ struct ContentView: View {
                     .performanceController
                     .handleManualPlay()
             }
-            
-
-
+            .disabled(!hasWallpaper)
 
             // ----------------------------------------------------
             // PAUSE
@@ -637,6 +652,7 @@ struct ContentView: View {
                     .performanceController
                     .handleManualPause()
             }
+            .disabled(!hasWallpaper)
 
             // ----------------------------------------------------
             // STOP
@@ -644,14 +660,10 @@ struct ContentView: View {
 
             Button("Stop") {
 
-                appModel
-                    .playbackController
-                    .stop()
-
-                appModel
-                    .wallpaperManager
-                    .hideWallpaper()
+                appModel.stopWallpaper()
+                hasWallpaper = false
             }
+            .disabled(!hasWallpaper)
 
             Spacer()
 
@@ -725,6 +737,15 @@ struct ContentView: View {
                     try await VideoImportService
                         .selectAndImportVideo()
 
+                // Importing selects a new video; it must not inherit the
+                // playback state of the previously active wallpaper.
+                appModel.hideAllDisplays()
+                hasWallpaper = false
+                UserDefaults.standard.set(
+                    false,
+                    forKey: wallpaperActiveKey
+                )
+
                 let item =
                     wallpaperLibrary
                         .addWallpaper(
@@ -740,13 +761,18 @@ struct ContentView: View {
                         from: result.url
                     )
 
+                await appModel
+                    .loadWallpaperOnAllDisplays(
+                        from: result.url
+                    )
+
                 metadata =
                     result.metadata
 
                 statusMessage =
                     "Added " +
                     "\(result.metadata.fileName) " +
-                    "to the library."
+                    "to the library. Click Set Wallpaper to start playback."
 
                 selectedItemID =
                     item.id
@@ -788,15 +814,24 @@ struct ContentView: View {
 
             do {
 
+                appModel.hideAllDisplays()
+                hasWallpaper = false
+                UserDefaults.standard.set(
+                    false,
+                    forKey: wallpaperActiveKey
+                )
+
                 let url =
                     try wallpaperLibrary
                         .resolveURL(
                             for: id
                         )
-
                 try await appModel
                     .playbackController
-                    .loadVideo(
+                    .loadVideo(from: url)
+
+                await appModel
+                    .loadWallpaperOnAllDisplays(
                         from: url
                     )
 
@@ -804,8 +839,8 @@ struct ContentView: View {
                     item.metadata
 
                 statusMessage =
-                    "Loaded " +
-                    "\(item.metadata.fileName)."
+                    "Selected \(item.metadata.fileName). " +
+                    "Click Set Wallpaper to start playback."
 
             } catch {
 
@@ -833,15 +868,20 @@ struct ContentView: View {
             return
         }
 
-        let shouldRestore =
-            UserDefaults.standard.bool(
-                forKey:
-                    wallpaperActiveKey
-            )
-
         Task { @MainActor in
 
             do {
+
+                // Reopening the main window in the same app session should
+                // not reload or restart an already loaded wallpaper.
+                if appModel.playbackController.hasLoadedVideo {
+                    hasWallpaper = appModel.hasWallpaperBeenSet
+                    metadata = wallpaperLibrary.item(withID: selectedID)?.metadata
+                    statusMessage = hasWallpaper
+                        ? "Wallpaper is active."
+                        : "Video selected. Click Set Wallpaper to start playback."
+                    return
+                }
 
                 let url =
                     try wallpaperLibrary
@@ -855,36 +895,15 @@ struct ContentView: View {
                         from: url
                     )
 
-                if shouldRestore,
-                   let player =
-                    appModel
-                    .playbackController
-                    .player {
+                await appModel.loadWallpaperOnAllDisplays(from: url)
 
-                    appModel
-                        .wallpaperManager
-                        .showWallpaper(
-                            player: player,
-                            scalingMode:
-                                scalingMode
-                        )
-
-                    appModel
-                        .playbackController
-                        .play()
-
-                    appModel
-                        .performanceController
-                        .evaluate(
-                            reason:
-                                "Wallpaper restored after application launch"
-                        )
-
-                    hasWallpaper = true
-
-                    statusMessage =
-                        "Live wallpaper restored."
-                }
+                metadata = wallpaperLibrary.item(withID: selectedID)?.metadata
+                hasWallpaper = false
+                UserDefaults.standard.set(
+                    false,
+                    forKey: wallpaperActiveKey
+                )
+                statusMessage = "Video selected. Click Set Wallpaper to start playback."
 
             } catch {
 
@@ -906,11 +925,7 @@ struct ContentView: View {
 
     private func setWallpaper() {
 
-        guard let player =
-                appModel
-                .playbackController
-                .player
-        else {
+        guard appModel.playbackController.player != nil else {
 
             statusMessage =
                 "No video is loaded."
@@ -918,24 +933,7 @@ struct ContentView: View {
             return
         }
 
-        appModel
-            .wallpaperManager
-            .showWallpaper(
-                player: player,
-                scalingMode:
-                    scalingMode
-            )
-
-        appModel
-            .playbackController
-            .play()
-
-        appModel
-            .performanceController
-            .evaluate(
-                reason:
-                    "Wallpaper started"
-            )
+        appModel.playAllDisplays()
 
         hasWallpaper = true
 
@@ -956,13 +954,7 @@ struct ContentView: View {
 
     private func removeWallpaper() {
 
-        appModel
-            .wallpaperManager
-            .hideWallpaper()
-
-        appModel
-            .playbackController
-            .pause()
+        appModel.hideAllDisplays()
 
         appModel
             .performanceController
@@ -991,9 +983,7 @@ struct ContentView: View {
         if wallpaperLibrary
             .selectedItemID == id {
 
-            appModel
-                .wallpaperManager
-                .hideWallpaper()
+            appModel.hideAllDisplays()
 
             appModel
                 .playbackController
@@ -1068,4 +1058,3 @@ struct ContentView: View {
         )
     }
 }
-

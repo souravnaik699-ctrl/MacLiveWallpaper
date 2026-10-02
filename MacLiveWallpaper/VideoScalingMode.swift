@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import Foundation
 
 enum VideoScalingMode: String, CaseIterable, Identifiable {
 
@@ -28,6 +29,12 @@ enum VideoScalingMode: String, CaseIterable, Identifiable {
         case .center:
             return "Center"
         }
+    }
+
+    init(settingValue: String) {
+        self = Self.allCases.first {
+            $0.displayName.caseInsensitiveCompare(settingValue) == .orderedSame
+        } ?? .fill
     }
 
     var videoGravity: AVLayerVideoGravity {
